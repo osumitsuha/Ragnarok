@@ -1,17 +1,12 @@
 from constants.status import bStatus
 from constants.privileges import Privileges
+from constants.presence import PresenceFilter
 from utils import log
 from objects import glob
 from enum import unique, IntEnum
 from packets import writer
 import time
 import uuid
-
-@unique
-class PresenceFilter(IntEnum):
-    NULL = 0
-    ALL = 1
-    FRIENDS = 2
 
 @unique
 class GameMode(IntEnum):
@@ -41,7 +36,7 @@ class Player:
         else:
             self.token = self.generate_token()
 
-        self.presence_filter = PresenceFilter.NULL
+        self.presence_filter = PresenceFilter.NIL
 
         self.status = bStatus.IDLE
         self.status_text: str = "on Vanilla"
