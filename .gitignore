@@ -1,0 +1,8 @@
+**/__pycache__
+**/build
+
+/config.py
+/.data
+
+Pipfile
+Pipfile.lock
