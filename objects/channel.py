@@ -58,17 +58,16 @@ class Channels:
         glob.players.enqueue(await writer.ChanInfo(name))
 
     async def message(self, p, msg, channel):
-        if not (self.get_channel(channel) and channel.startswith("#")):
-            return # channel not found; ignore.
-
         if p.is_restricted:
             return # ignore if the user is restricted
-
+        
         if not channel.startswith("#"):
             u = await glob.players.get_user(channel) # channel is the users username in this instance
 
             u.enqueue(await writer.SendMessage(p.username, msg, channel))
 
+        if not (self.get_channel(channel)):
+            return # channel not found; ignore.
 
         # TODO: checks.
         for u in glob.players.players:

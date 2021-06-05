@@ -25,7 +25,7 @@ title_card: str = '''
             \\""""""""""""""""""""/
              \ ...  .    . ..  ./
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-osu!ragnarok, an osu!bancho emulator.
+osu!ragnarok, an osu!bancho & /web/ emulator.
 Simon & Aoba
 '''
 

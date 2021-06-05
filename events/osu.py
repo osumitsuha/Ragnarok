@@ -73,6 +73,6 @@ async def get_scores(req: Request):
     ret = b.web_format
     ret += "\n1|Aoba|420|69|0|0|0|0|0|0|1|0|4|1|0|0" # personal best (change to "\n" if none)
     ret += "\n1|Aoba|420|69|0|0|0|0|0|0|1|0|4|1|0|0" # score 1
-    ret += "\n2|Simon|2147447|21474|0|0|21474|0|4|5|0|8|3|2|0|0" # score 2
+    ret += "\n2|Simon|2147483647|21474|0|0|21474|0|4|5|0|8|3|2|0|0" # score 2
 
     return Response(ret) #placeholder

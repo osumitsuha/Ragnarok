@@ -134,15 +134,19 @@ class Player:
             self.friends.add(player[0])
 
     async def handle_friend(self, user: int):
+        if not (t := await glob.players.get_user_by_id(user)):
+            return # user isn't online; ignore
+
         # remove friend
         if await glob.sql.fetch("SELECT 1 FROM friends WHERE user_id1 = %s AND user_id2 = %s", (self.id, user)):
             await glob.sql.execute("DELETE FROM friends WHERE user_id1 = %s AND user_id2 = %s", (self.id, user))
             self.friends.remove(user)
-            log.info(f"{self.username} removed {user} as friends.")
+            
+            log.info(f"{self.username} removed {t.username} as friends.")
             return
 
         # add friend
         await glob.sql.execute("INSERT INTO friends (user_id1, user_id2) VALUES (%s, %s)", (self.id, user))
         self.friends.add(user)
 
-        log.info(f"{self.username} added {user} as friends.")
+        log.info(f"{self.username} added {t.username} as friends.")
