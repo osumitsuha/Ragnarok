@@ -1,6 +1,7 @@
 from lib.responses import BanchoResponse
 from starlette.requests import Request
-from decorators import register, required_osu_header, register_event
+from starlette.responses import HTMLResponse
+from decorators import register, register_event
 from utils import log
 from constants.privileges import Privileges
 from utils import log
@@ -13,47 +14,56 @@ import asyncio
 import bcrypt
 import time
 
-@register("/", methods=["POST"])
-@required_osu_header()
+@register("/", methods=["GET", "POST"])
 async def handle_bancho(req: Request):
-    body = await req.body()
+    if req.method == "POST":
+        if not "user-agent" in req.headers \
+            or req.headers["user-agent"] != "osu!":
+            return BanchoResponse("no")
 
-    if not "osu-token" in req.headers:
-        return await login(
-            body, req.headers["X-Real-IP"]
-        )
+        body = await req.body()
 
-    token = req.headers["osu-token"]
-    packet_id = body[0]
-    
-    if not (player := await glob.players.get_user_by_token(token)):
-        return BanchoResponse(bytes(
-            await writer.Notification("Server has restarted") + await writer.ServerRestart()
-        ))
+        if not "osu-token" in req.headers:
+            return await login(
+                body, req.headers["X-Real-IP"]
+            )
 
-    response = bytearray()
-
-    # maybe this will work? TODO: checks
-    if not any(h["packet"] == packet_id for h in glob.registered_packets) and not packet_id == 4:
-        log.warning(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username} but isn't a registered packet.")
+        token = req.headers["osu-token"]
+        packet_id = body[0]
         
-        return BanchoResponse(b"", token=player.token)
+        if not (player := await glob.players.get_user_by_token(token)):
+            return BanchoResponse(bytes(
+                await writer.Notification("Server has restarted") + await writer.ServerRestart()
+            ))
 
-    # TODO: better handling
-    for handle in glob.registered_packets:
-        if packet_id == handle["packet"]:
-            log.info(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username}")
+        response = bytearray()
 
-            #start_time = time.time_ns()
-            await handle["func"](player, body)
-            #response += await writer.Notification(f"Authorization took: {(time.time_ns() - start_time) / 1e6}ms")
+        if not any(h["packet"] == packet_id for h in glob.registered_packets) and not packet_id == 4:
+            if glob.debug:
+                log.warning(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username} but isn't a registered packet.")
+            
+            return BanchoResponse(b"", token=player.token)
 
-    if player.queue:
-        response += player.dequeue()
+        for handle in glob.registered_packets:
+            if packet_id == handle["packet"]:
+                if glob.debug:
+                    log.debug(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username}")
 
-    return BanchoResponse(bytes(response), token=player.token)
+                # ignore restricted user trying 
+                # to do unrestricted packets
+                if player.is_restricted and (not handle["restricted"]):
+                    continue
 
-    
+                await handle["func"](player, body)
+
+        if player.queue:
+            response += player.dequeue()
+
+        return BanchoResponse(bytes(response), token=player.token)
+
+    return HTMLResponse(f"<pre>{glob.title_card}<br>first attempt pog</pre>")
+
+
 async def login(
     body: bytes,
     ip: str
@@ -85,12 +95,12 @@ async def login(
     # check if the password is correct
     if phash in glob.bcrypt_cache:
         if pmd5 != glob.bcrypt_cache[phash]:
-            log.info(f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)")
+            log.warning(f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)")
             
             return BanchoResponse(await writer.UserID(-1))
     else:
         if not bcrypt.checkpw(pmd5, phash):
-            log.info(f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)")
+            log.warning(f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)")
             
             return BanchoResponse(await writer.UserID(-1))
 
@@ -128,7 +138,7 @@ async def login(
         return false;
     }
     """
-    #if my_balls > your_balls:
+    #if my_balls > sussy_balls:
     #   return BanchoResponse(await writer.UserID(-5))
     
     user_info["ip"] = ip
@@ -145,7 +155,6 @@ async def login(
 
     await glob.players.add_user(p)
 
-    # there will be more, and this will be helpful
     await asyncio.gather(*[
         p.get_friends()
     ])
@@ -158,6 +167,9 @@ async def login(
     data += await writer.UpdateStats(p)
     
     for channel in glob.channels.channels:
+        if channel.staff and p.is_staff:
+            data += await writer.ChanInfo(channel.name)
+
         if channel.public:
             data += await writer.ChanInfo(channel.name)
 
@@ -206,7 +218,7 @@ async def change_action(p: Player, packet):
 @register_event(BanchoPackets.OSU_SEND_PUBLIC_MESSAGE)
 async def send_public_message(p: Player, packet):
     data = reader.read_packet(packet, (
-        ("sender", writer.Types.string),
+        ("_", writer.Types.string),
         ("message", writer.Types.string),
         ("channel", writer.Types.string)
     ))
@@ -221,6 +233,8 @@ async def logout(p: Player, packet):
         return 
 
     log.info(f"{p.username} left the server.")
+
+    await p.logout()
 
 # id: 3
 @register_event(BanchoPackets.OSU_REQUEST_STATUS_UPDATE, restricted=True)
@@ -277,7 +291,7 @@ async def unable_to_spec(p: Player, packet):
 @register_event(BanchoPackets.OSU_SEND_PRIVATE_MESSAGE)
 async def send_public_message(p: Player, packet):
     data = reader.read_packet(packet, (
-        ("sender", writer.Types.string),
+        ("_", writer.Types.string),
         ("message", writer.Types.string),
         ("user", writer.Types.string)
     ))

@@ -132,8 +132,6 @@ class Player:
         friends = await glob.sql.fetchall("SELECT user_id2 FROM friends WHERE user_id1 = %s", (self.id))
         for player in friends:
             self.friends.add(player[0])
-        else:
-            self.friends.add(1)
 
     async def handle_friend(self, user: int):
         # remove friend

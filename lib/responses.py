@@ -1,6 +1,7 @@
 from typing import Union, Optional
 from starlette.responses import HTMLResponse
 
+# mashallah kotrik
 class BanchoResponse(HTMLResponse):
     def __init__(self, response_text: Union[bytes], token: Optional[str] = None):
         headers = {

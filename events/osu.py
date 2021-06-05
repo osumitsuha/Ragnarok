@@ -26,8 +26,7 @@ async def get_scores(req: Request):
         {0}
         [bold:0,size:20]{0}|{1}
         {0}
-        {0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Personal Best
-        {0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Top 50 scores
+        {0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Personal Best and top 50 scores
 
         {0} = Beatmap Status
         false/true = Server has OSZ2 file (Must set to "false" to allow score submission)
@@ -42,7 +41,7 @@ async def get_scores(req: Request):
 
         {0} = Rating
 
-        {0} = Score ID
+        {0} = Rank
         {1} = Username
         {2} = Score
         {3} = Combo
@@ -60,21 +59,20 @@ async def get_scores(req: Request):
         {15} = Has replay saved on server
     """
     hash = req.query_params["c"]
-    log.info(req.query_params)
+    beatmap_id = req.query_params["i"]
 
-    b = Beatmap(hash)
+    b = Beatmap(hash, map_id=beatmap_id)
 
-    if not await b.get_beatmap():
-        return Response("-1|true")
+    await b.get_beatmap()
 
     if b.approved <= 0:
-        return Response("0|true")
+        return Response("0|false")
 
     b.approved += 1
 
     ret = b.web_format
     ret += "\n1|Aoba|420|69|0|0|0|0|0|0|1|0|4|1|0|0" # personal best (change to "\n" if none)
     ret += "\n1|Aoba|420|69|0|0|0|0|0|0|1|0|4|1|0|0" # score 1
-    ret += "\n2|Simon|69|88|1|2|3|0|4|5|0|8|3|2|0|0" # score 2
+    ret += "\n2|Simon|2147447|21474|0|0|21474|0|4|5|0|8|3|2|0|0" # score 2
 
     return Response(ret) #placeholder

@@ -6,5 +6,7 @@ config = {
         "db": "ragnarok",
         "autocommit": True
     },
-    "osu_api_key": "https://old.ppy.sh/p/api or something idk"
+    "osu_api_key": "https://old.ppy.sh/p/api or something idk",
+    
+    "debug": False
 }

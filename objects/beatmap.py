@@ -1,7 +1,8 @@
-from enum import IntEnum
+from enum import IntEnum, unique
 import aiohttp
 from objects import glob
 from utils import log
+import time
 
 class Approved(IntEnum):
     GRAVEYARD = -2
@@ -78,21 +79,32 @@ class Beatmap:
 
     @property
     def web_format(self):
-        return f"{self.approved}|true|{self.map_id}|{self.set_id}|{len(self.scores)}\n0\n{self.display_title}\n{self.rating}"
+        return f"{self.approved}|false|{self.map_id}|{self.set_id}|{len(self.scores)}\n0\n{self.display_title}\n{self.rating}"
 
     async def _get_beatmap_from_sql(self):
         ret = await glob.sql.fetch(
-            "SELECT map_id, set_id, hash, title, title_unicode, version, "
-            "artist, artist_unicode, creator, creator_id, stars, "
-            "od, ar, hp, cs, mode, bpm, count_circles, "
-            "count_spinners, count_sliders, approved, "
-            "submit_date, approved_date, latest_update, "
-            "length, drain, plays, passes, faovrites, rating FROM beatmaps "
-            "WHERE hash = %s LIMIT 1", (self.hash_md5)
+            "SELECT set_id, map_id, hash, title, title_unicode, "
+            "version, artist, artist_unicode, creator, creator_id, stars, "
+            "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
+            "latest_update, length, drain, plays, passes, favorites, rating "
+            "FROM beatmaps WHERE hash = %s", (self.hash_md5)
         )
 
         if not ret:
-            return False
+            ret = await glob.sql.fetch(
+                "SELECT set_id, map_id, hash, title, title_unicode, "
+                "version, artist, artist_unicode, creator, creator_id, stars, "
+                "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
+                "latest_update, length, drain, plays, passes, favorites, rating "
+                "FROM beatmaps WHERE map_id = %s AND set_id = %s", (self.map_id, self.set_id)
+            )
+
+            if ret:
+                if glob.debug:
+                    log.debug("Got map, but not with its set hash_md5 (outdated map)")
+
+            if not ret:
+                return False
 
         if not self.set_id:
             self.set_id = ret["set_id"]
@@ -116,7 +128,7 @@ class Beatmap:
         self.mode = ret["mode"]
         self.bpm = ret["bpm"]
 
-        self.approved = Approved(ret["approved"])
+        self.approved = ret["approved"]
 
         self.submit_date = ret["submit_date"]
         self.approved_date = ret["approved_date"]
@@ -133,15 +145,35 @@ class Beatmap:
 
         return True
 
+    async def add_to_db(self):
+        await glob.sql.execute(
+            "INSERT INTO beatmaps (set_id, map_id, hash, title, title_unicode, "
+            "version, artist, artist_unicode, creator, creator_id, stars, "
+            "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
+            "latest_update, length, drain, plays, passes, favorites, rating) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            [*self.__dict__.values()][:-1]
+        )
+
+        log.info(f"Saved {self.full_title} ({self.hash_md5}) into database")
+
     async def _get_beatmap_from_osuapi(self):
         async with aiohttp.ClientSession() as session:
-            # TODO: add more ways to find beatmap, by it's set ID
+            # get the beatmap with its hash
             async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&h="+self.hash_md5) as resp:
                 if not resp or resp.status != 200:
                     return False
 
                 if not (b_data := await resp.json()):
-                    return False
+                    # if the beatmap couldn't be found with the hash 
+                    # we try getting the map with its map id.
+                    async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&b="+self.map_id) as resp:
+                        if not resp or resp.status != 200:
+                            return False
+
+                        if not (b_data := await resp.json()):
+                            return False
 
                 ret = b_data[0]
 
@@ -167,10 +199,15 @@ class Beatmap:
         self.mode = int(ret["mode"])
         self.bpm = float(ret["bpm"])
 
-        self.approved = Approved(int(ret["approved"]))
+        self.approved = int(ret["approved"])
 
         self.submit_date = ret["submit_date"]
-        self.approved_date = ret["approved_date"]
+        
+        if ret["approved_date"]:
+            self.approved_date = ret["approved_date"]
+        else:
+            self.approved_date = "0"
+
         self.latest_update = ret["last_update"]
        
         self.length_total = int(ret["total_length"])
@@ -182,12 +219,14 @@ class Beatmap:
 
         self.rating = float(ret["rating"])
 
+        await self.add_to_db()
+
         return True
 
     async def get_beatmap(self):
-        #if not (ret := await self._get_beatmap_from_sql()): gonna implement later...
-        if not (ret := await self._get_beatmap_from_osuapi()):
-            return
+        if not (ret := await self._get_beatmap_from_sql()):
+            if not (ret := await self._get_beatmap_from_osuapi()):
+                return
 
         return ret
 

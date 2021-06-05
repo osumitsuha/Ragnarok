@@ -1,29 +1,38 @@
 from starlette.applications import Starlette
-from events import bancho, osu, avatar
+from events import bancho, osu, avatar # dont remove
+from constants import commands # dont remove
 from lib.database import Database
 from objects.bot import Louise
 from objects import glob
 from utils import log
+import os
 
 async def startup():
-    log.info("Starting up Atarashi...")
-    log.info("Connecting to the database...")
+    print(f"\033[94m{glob.title_card}")
+
+    for _path in (".data/avatars", ".data/replays", ".data/beatmaps"):
+        if not os.path.exists(_path):
+            log.warning(f"You're missing the folder {_path}! Don't worry we'll add it for you!")
+
+            os.makedirs(_path)
+
+    log.info(".. Connecting to the database")
 
     glob.sql = Database()
     await glob.sql.connect(glob.config["mysql"])
 
-    log.info("Connected to the database!")
+    log.info("✓ Connected to the database!")
 
-    log.info("Connecting Louise to the server...")
+    log.info("... Connecting Louise to the server")
     await Louise.init()
-    log.info("Connected Louise!")
+    log.info("✓ Successfully connected Louise!")
 
-    log.info("Adding channels...")
+    log.info("... Adding channels")
 
-    async for channel in glob.sql.iterall("SELECT name, description, public, admin FROM channels"):
-        log.info(f"Adding {channel['name']}")
+    async for channel in glob.sql.iterall("SELECT name, description, public, staff FROM channels"):
         await glob.channels.add_channel(**channel)
-        log.info(f"Successfully added {channel['name']}")
+
+    log.info("✓ Successfully added all avaliable channels")
 
     log.info("Finished up connecting to everything!")
 
