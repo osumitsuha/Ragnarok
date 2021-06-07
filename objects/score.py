@@ -57,7 +57,7 @@ class Score:
         return f"\n{self.id}|{self.player.username}|{self.score if not self.relax else math.ceil(self.pp)}|" \
                f"{self.max_combo}|{self.count_50}|{self.count_100}|{self.count_300}|{self.count_miss}|" \
                f"{self.count_katu}|{self.count_geki}|{self.perfect}|{self.mods}|{self.player.id}|" \
-               f"{self.position}|{self.submitted}|0"
+               f"{self.position}|{self.submitted}|1"
 
     @classmethod
     async def set_data_from_submission(cls, 
@@ -172,15 +172,12 @@ class Score:
             # if we found a passed score
             # that has more score on the map, 
             # we set it to not passed.
-            if not pb.score < self.score:
-                # TODO: proper handling
-                return
-
-            await glob.sql.execute(
-                "UPDATE scores SET passed = 0 WHERE user_id = %s AND relax = %s "
-                "AND hash_md5 = %s AND mode = %s  AND passed = 1", 
-                (self.player.id, self.relax, self.map.hash_md5, self.mode)
-            )
+            if pb.score < self.score:
+                await glob.sql.execute(
+                    "UPDATE scores SET passed = 0 WHERE user_id = %s AND relax = %s "
+                    "AND hash_md5 = %s AND mode = %s  AND passed = 1", 
+                    (self.player.id, self.relax, self.map.hash_md5, self.mode)
+                )
 
             if [pb.web_format, pb.mode, pb.relax] in self.map.scores:
                 if glob.debug:
@@ -188,7 +185,7 @@ class Score:
 
                 self.map.scores.remove([pb.web_format, pb.mode, pb.relax])
 
-        r = await glob.sql.execute(
+        await glob.sql.execute(
             "INSERT INTO scores (hash_md5, user_id, score, pp, "
             "count_300, count_100, count_50, count_geki, "
             "count_katu, count_miss, max_combo, accuracy, "
@@ -204,5 +201,3 @@ class Score:
                 self.play_time, self.mode, self.submitted, self.relax
             )
         )
-
-        self.id = r # lastrowid

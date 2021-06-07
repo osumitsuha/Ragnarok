@@ -205,3 +205,14 @@ class Player:
         self.friends.add(user)
 
         log.info(f"{self.username} added {t.username} as friends.")
+
+    async def restrict(self) -> None:
+        if self.is_restricted:
+            return # just ignore if the user
+                   # is already restricted.
+
+        self.privileges -= Privileges.VERIFIED
+
+        await glob.db.execute("UPDATE users SET privileges -= 4 WHERE id = %s", (self.id))
+
+        log.info(f"{self.username} has been put in restricted mode!")

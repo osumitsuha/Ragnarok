@@ -7,7 +7,8 @@ from objects import glob
 from utils import log
 from decorators import register_osu, check_auth, register
 from objects.score import Score
-import numpy as np
+from utils import replay
+import aiofiles
 import time
 
 @register("/web/{url:str}", methods=["GET", "POST"])
@@ -74,6 +75,11 @@ async def get_scores(req: Request):
     else:
         b = glob.beatmaps[hash]
 
+    if not b:
+        return Response("-1|true")
+
+    b.approved += 1
+
     p = await glob.players.get_user(req.query_params["us"])
 
     if not p:
@@ -86,13 +92,8 @@ async def get_scores(req: Request):
     if int(req.query_params["mods"]) & Mods.RELAX and not p.relax:
         p.relax = True
 
-    if not b:
-        return Response("-1|true")
-
     if b.approved <= 0:
         return Response("0|false")
-
-    b.approved += 1
 
     ret = b.web_format
 
@@ -167,23 +168,20 @@ async def get_scores(req: Request):
                 d["ip"] = "127.0.0.1"
                 play["map"] = b
 
-                a = Player(**d)
-                global_s = Score(p=a, **play)
+                lp = Player(**d)
+                ls = Score(p=lp, **play)
 
-                await global_s.calculate_position() 
+                await ls.calculate_position() 
 
                 # {0} is the web format for the score
                 # {1} is the mode of the play
                 # {2} is the indicator that the play is either relax or not.
-                b.scores.append([global_s.web_format, mode, global_s.relax])
+                b.scores.append([ls.web_format, mode, ls.relax])
 
-    fetched_leaderboard = []
+    # fetched leaderboards
+    fl = (x[0] for x in b.scores if x[1] == mode and x[2] == p.relax)
 
-    for position in b.scores:
-        if (position[1] == mode and position[2] == p.relax):
-            fetched_leaderboard.append(position[0])
-
-    ret += "".join(fetched_leaderboard)
+    ret += "".join(fl)
 
     if not hash in glob.beatmaps:
         glob.beatmaps[hash] = b
@@ -210,44 +208,64 @@ async def score_submission(req: Request):
         submission_key, int(body["x"]), int(body["ft"])
     )
 
+    if not s:
+        return Response("error: no")
+
     if not s.player:
         return Response("error: nouser")
 
+    if not s.map:
+        return Response("error: beatmap")
+
     leaderboard = []
 
-    # handle leaderboard caching and other
-    # stuff if the player isnt restricted.
-    if not s.player.is_restricted:
-        await s.calculate_position() 
-        # this seems to be the only solution
-        # i have in mind to fix the mode and
-        # relax problem. and also this checks
-        # if the user is already on the map
-        if s.passed:
-            for position in s.map.scores:
-                if (position[1] == s.mode and position[2] == s.relax):
-                    leaderboard.append(position[0])
+    # i hate this
+    s.id = await glob.sql.fetch("SELECT id FROM scores ORDER BY id DESC LIMIT 1") 
+    s.id = s.id["id"] + 1
 
-            # TODO: top 50 handling
+    # handle needed things, if the map is ranked.
+    if s.map.approved >= 1:
+        if not s.player.is_restricted:
+            if s.passed:
+                await s.calculate_position() 
+                # restrict the player if they
+                # somehow managed to submit a 
+                # score without a replay.
+                if body.multi_items()[-1][0] != "score":
+                    await s.player.restrict()
+                    return Response("error: no")
 
-            leaderboard.append([s.web_format, s.mode, s.relax])
+                async with aiofiles.open(f".data/replays/{s.id}.osr", "wb+") as file:
+                    await file.write(await replay.write_replay(body["score"], s))
 
-        if s.position == 1:
-            modes = {
-                0: "osu!",
-                1: "osu!taiko",
-                2: "osu!catch",
-                3: "osu!mania"
-            }[s.mode]
+                # Leaderboard cache handling
+                for position in s.map.scores:
+                    if (position[1] == s.mode and position[2] == s.relax):
+                        leaderboard.append(position[0])
 
-            await glob.channels.message(
-                await glob.players.get_user_by_id(1), 
-                f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]",
-                "#announce"
-            )
+                # TODO: top 50 handling
+
+                leaderboard.append([s.web_format, s.mode, s.relax])
+
+            # Maybe this needs to be done a
+            # different way? Well see till then.
+            if s.position == 1:
+                modes = {
+                    0: "osu!",
+                    1: "osu!taiko",
+                    2: "osu!catch",
+                    3: "osu!mania"
+                }[s.mode]
+
+                await glob.channels.message(
+                    await glob.players.get_user_by_id(1), 
+                    f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]",
+                    "#announce"
+                )
 
     await s.save_to_db()
 
-    log.debug(f"Submit handler took: {(time.time_ns() - start) / 1e6}ms")
+    if glob.debug:
+        log.debug(f"Submit handler took: {(time.time_ns() - start) / 1e6}ms")
 
     return Response("error: ban")
