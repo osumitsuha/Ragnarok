@@ -1,8 +1,7 @@
-from enum import IntEnum, unique
+from enum import IntEnum
 import aiohttp
 from objects import glob
 from utils import log
-import time
 
 class Approved(IntEnum):
     GRAVEYARD = -2
@@ -15,10 +14,10 @@ class Approved(IntEnum):
     LOVED = 4
 
 class Beatmap:
-    def __init__(self, hash: str, set_id: int = 0, map_id: int = 0):
-        self.set_id = set_id
-        self.map_id = map_id
-        self.hash_md5 = hash
+    def __init__(self):
+        self.set_id = 0
+        self.map_id = 0
+        self.hash_md5 = ""
 
         self.title = ""
         self.title_unicode = "" # added
@@ -81,69 +80,57 @@ class Beatmap:
     def web_format(self):
         return f"{self.approved}|false|{self.map_id}|{self.set_id}|{len(self.scores)}\n0\n{self.display_title}\n{self.rating}"
 
-    async def _get_beatmap_from_sql(self):
+    @classmethod
+    async def _get_beatmap_from_sql(cls, hash: str):
+        b = cls()
+
         ret = await glob.sql.fetch(
             "SELECT set_id, map_id, hash, title, title_unicode, "
             "version, artist, artist_unicode, creator, creator_id, stars, "
             "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
             "latest_update, length, drain, plays, passes, favorites, rating "
-            "FROM beatmaps WHERE hash = %s", (self.hash_md5)
+            "FROM beatmaps WHERE hash = %s", (hash)
         )
 
         if not ret:
-            ret = await glob.sql.fetch(
-                "SELECT set_id, map_id, hash, title, title_unicode, "
-                "version, artist, artist_unicode, creator, creator_id, stars, "
-                "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
-                "latest_update, length, drain, plays, passes, favorites, rating "
-                "FROM beatmaps WHERE map_id = %s AND set_id = %s", (self.map_id, self.set_id)
-            )
+            return 
 
-            if ret:
-                if glob.debug:
-                    log.debug("Got map, but not with its set hash_md5 (outdated map)")
+        b.set_id = ret["set_id"]
+        b.map_id = ret["map_id"]
+        b.hash_md5 = ret["hash"]
 
-            if not ret:
-                return False
-
-        if not self.set_id:
-            self.set_id = ret["set_id"]
-
-        if not self.map_id:
-            self.map_id = ret["map_id"]
-
-        self.title = ret["title"]
-        self.title_unicode = ret["title_unicode"] #added
-        self.version = ret["version"]
-        self.artist = ret["artist"]
-        self.artist_unicode = ret["artist_unicode"] #added
-        self.creator = ret["creator"]
-        self.creator_id = ret["creator_id"]
+        b.title = ret["title"]
+        b.title_unicode = ret["title_unicode"] #added
+        b.version = ret["version"]
+        b.artist = ret["artist"]
+        b.artist_unicode = ret["artist_unicode"] #added
+        b.creator = ret["creator"]
+        b.creator_id = ret["creator_id"]
         
-        self.stars = ret["stars"]
-        self.od = ret["od"]
-        self.ar = ret["ar"]
-        self.hp = ret["hp"]
-        self.cs = ret["cs"]
-        self.mode = ret["mode"]
-        self.bpm = ret["bpm"]
+        b.stars = ret["stars"]
+        b.od = ret["od"]
+        b.ar = ret["ar"]
+        b.hp = ret["hp"]
+        b.cs = ret["cs"]
+        b.mode = ret["mode"]
+        b.bpm = ret["bpm"]
 
-        self.approved = ret["approved"]
+        b.approved = ret["approved"]
 
-        self.submit_date = ret["submit_date"]
-        self.approved_date = ret["approved_date"]
-        self.latest_update = ret["latest_update"]
+        b.submit_date = ret["submit_date"]
+        b.approved_date = ret["approved_date"]
+        b.latest_update = ret["latest_update"]
        
-        self.length_total = ret["length"]
-        self.drain = ret["drain"]
+        b.length_total = ret["length"]
+        b.drain = ret["drain"]
 
-        self.plays = ret["plays"]
-        self.passes = ret["passes"]
-        self.favorites = ret["favorites"]
+        b.plays = ret["plays"]
+        b.passes = ret["passes"]
+        b.favorites = ret["favorites"]
 
-        self.rating = ret["rating"]
+        b.rating = ret["rating"]
 
-        return True
+        return b
 
     async def add_to_db(self):
         await glob.sql.execute(
@@ -158,76 +145,71 @@ class Beatmap:
 
         log.info(f"Saved {self.full_title} ({self.hash_md5}) into database")
 
-    async def _get_beatmap_from_osuapi(self):
+    @classmethod
+    async def _get_beatmap_from_osuapi(cls, hash: str):
+        b = cls()
+
         async with aiohttp.ClientSession() as session:
             # get the beatmap with its hash
-            async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&h="+self.hash_md5) as resp:
+            async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&h="+hash) as resp:
                 if not resp or resp.status != 200:
-                    return False
+                    return
 
                 if not (b_data := await resp.json()):
-                    # if the beatmap couldn't be found with the hash 
-                    # we try getting the map with its map id.
-                    async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&b="+self.map_id) as resp:
-                        if not resp or resp.status != 200:
-                            return False
-
-                        if not (b_data := await resp.json()):
-                            return False
+                    return
 
                 ret = b_data[0]
 
-        if not self.set_id:
-            self.set_id = int(ret["beatmapset_id"])
+        b.set_id = int(ret["beatmapset_id"])
+        b.map_id = int(ret["beatmap_id"])
+        b.hash_md5 = ret["file_md5"]
 
-        if not self.map_id:
-            self.map_id = int(ret["beatmap_id"])
-
-        self.title = ret["title"]
-        self.title_unicode = ret["title_unicode"] # added
-        self.version = ret["version"]
-        self.artist = ret["artist"]
-        self.artist_unicode = ret["artist_unicode"] # added
-        self.creator = ret["creator"]
-        self.creator_id = int(ret["creator_id"])
+        b.title = ret["title"]
+        b.title_unicode = ret["title_unicode"] or ret["title"] # added
+        b.version = ret["version"]
+        b.artist = ret["artist"]
+        b.artist_unicode = ret["artist_unicode"] or ret["artist"] # added
+        b.creator = ret["creator"]
+        b.creator_id = int(ret["creator_id"])
         
-        self.stars = float(ret["difficultyrating"])
-        self.od = float(ret["diff_overall"])
-        self.ar = float(ret["diff_approach"])
-        self.hp = float(ret["diff_drain"])
-        self.cs = float(ret["diff_size"])
-        self.mode = int(ret["mode"])
-        self.bpm = float(ret["bpm"])
+        b.stars = float(ret["difficultyrating"])
+        b.od = float(ret["diff_overall"])
+        b.ar = float(ret["diff_approach"])
+        b.hp = float(ret["diff_drain"])
+        b.cs = float(ret["diff_size"])
+        b.mode = int(ret["mode"])
+        b.bpm = float(ret["bpm"])
 
-        self.approved = int(ret["approved"])
+        b.approved = int(ret["approved"])
 
-        self.submit_date = ret["submit_date"]
+        b.submit_date = ret["submit_date"]
         
         if ret["approved_date"]:
-            self.approved_date = ret["approved_date"]
+            b.approved_date = ret["approved_date"]
         else:
-            self.approved_date = "0"
+            b.approved_date = "0"
 
-        self.latest_update = ret["last_update"]
+        b.latest_update = ret["last_update"]
        
-        self.length_total = int(ret["total_length"])
-        self.drain = int(ret["hit_length"])
+        b.length_total = int(ret["total_length"])
+        b.drain = int(ret["hit_length"])
 
-        self.plays = 0
-        self.passes = 0
-        self.favorites = 0
+        b.plays = 0
+        b.passes = 0
+        b.favorites = 0
 
-        self.rating = float(ret["rating"])
+        b.rating = float(ret["rating"])
 
-        await self.add_to_db()
+        await b.add_to_db()
 
-        return True
+        return b
 
-    async def get_beatmap(self):
-        if not (ret := await self._get_beatmap_from_sql()):
-            if not (ret := await self._get_beatmap_from_osuapi()):
+    @classmethod
+    async def get_beatmap(cls, hash: str):
+        self = cls() #trollface
+
+        if not (ret := await self._get_beatmap_from_sql(hash)):
+            if not (ret := await self._get_beatmap_from_osuapi(hash)):
                 return
 
         return ret
-
-    

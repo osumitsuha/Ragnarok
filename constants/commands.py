@@ -5,6 +5,7 @@ from typing import Callable
 from objects import glob
 from objects.player import Player
 from utils import log
+import random
 
 def register_command(cmd: str, required_perms = Privileges.USER):
     def decorator(cb: Callable) -> Callable:
@@ -29,7 +30,7 @@ async def kick_user(p, chan, message):
     args = message.split(" ")[1:]
 
     if len(args) < 1:
-        return "Who to kick?"
+        return "Usage: !kick <username>"
 
     if not (t := await glob.players.get_user(" ".join(args))):
         return "Player isn't online, or couldn't be found."
@@ -49,7 +50,7 @@ async def restrict_user(p, chan, message):
     args = message.split(" ")[1:]
 
     if len(args) < 1:
-        return "Who to restrict?"
+        return "Usage: !restrict <username>"
 
     if not (t := await glob.players.get_user(" ".join(args))):
         # if can't be found in cache thingy
@@ -79,7 +80,7 @@ async def unrestrict_user(p, chan, message):
     args = message.split(" ")[1:]
 
     if len(args) < 1:
-        return "Who to unrestrict?"
+        return "Usage: !unrestrict <username>"
 
     if not (t := await glob.players.get_user(" ".join(args))):
         # if can't be found in cache thingy
@@ -114,3 +115,40 @@ async def louise_commands(p, chan, message):
         await Louise.init()
 
         return "Successfully connected Louise."
+
+@register_command("roll")
+async def roll(p, chan, message):
+    # usage: !roll
+
+    return f"{p.username} rolled {random.randint(0, 100)} point(s)"
+
+@register_command("stats")
+async def user_stats(p, chan, message):
+    # usage: !stats <username> <rx/vn>
+
+    args = message.split(" ")[1:]
+
+    if len(args) < 2:
+        return "Usage: !stats <username> <rx/vn>"
+
+    if not (t := await glob.players.get_user(args[0])):
+        # if can't be found in cache thingy
+        # try getting it from database
+        if not (d := await glob.sql.fetch("SELECT username, id, privileges, passhash FROM users WHERE username = %s", (args[0]))):
+            return "Player couldn't be found in the database"
+
+        d["ip"] = "127.0.0.1" # locallhost cause ip is needed 
+
+        t = Player(**d)
+
+    relax = 0
+
+    if args[1] == "rx":
+        relax = 1
+
+    ret = await t.get_stats(relax)
+
+    return f"Stats for {t.username}:\n" \
+           f"PP: {ret['pp']} (#{ret['rank']})\n" \
+           f"Plays: {ret['playcount']} (lv{ret['level']})\n" \
+           f"Accuracy: {ret['level']}%"

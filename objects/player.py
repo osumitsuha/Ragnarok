@@ -1,19 +1,13 @@
 from constants.status import bStatus
 from constants.privileges import Privileges
 from constants.presence import PresenceFilter
+from constants.mods import Mods
+from constants.playmode import Mode
 from utils import log
 from objects import glob
-from enum import unique, IntEnum
 from packets import writer
 import time
 import uuid
-
-@unique
-class GameMode(IntEnum):
-    OSU = 0
-    TAIKO = 1
-    FRUITS = 2
-    MANIA = 3
 
 class Player:
     def __init__(self, username: str, id: int, privileges: int, 
@@ -41,9 +35,9 @@ class Player:
         self.status = bStatus.IDLE
         self.status_text: str = "on Vanilla"
         self.beatmap_md5: str = ""
-        self.current_mods = 0
-        self.play_mode: int = GameMode.OSU
-        self.beatmap_id: int = 12
+        self.current_mods: Mods = Mods.NONE
+        self.play_mode: int = Mode.OSU
+        self.beatmap_id: int = -1
 
         self.friends: set[int] = set()
         self.channels: list = []
@@ -56,8 +50,11 @@ class Player:
         self.accuracy: float = 0.0
         self.playcount: int = 0
         self.total_score: int = 0
+        self.level: float = 0.0
         self.rank: int = 0
         self.pp: int = 0
+
+        self.relax: int = 0 # 0 for vn / 1 for rx
 
         self.block_unknown_pms = kwargs.get("block_nonfriend", 0)
 
@@ -69,18 +66,22 @@ class Player:
 
         self.is_restricted = not (self.privileges & Privileges.VERIFIED)
         self.is_staff = self.privileges & Privileges.BAT
+    
+    @property
+    def embed(self) -> str:
+        return f"[https://osu.mitsuha.pw/users/{self.id} {self.username}]"
 
     def safe_username(self, name) -> str:
         return name.lower().replace(" ", "_")
 
     @staticmethod
-    def generate_token():
+    def generate_token() -> str:
         return uuid.uuid4().hex
 
-    def enqueue(self, packet: bytes):
+    def enqueue(self, packet: bytes) -> None:
         self.queue += packet
 
-    def dequeue(self):
+    def dequeue(self) -> None:
         if self.queue:
             ret = bytes(self.queue) 
             self.queue.clear()
@@ -88,9 +89,58 @@ class Player:
 
         return b""
 
-    async def logout(self):
+    async def get_stats(self, relax: int = 0) -> dict:
+        # TODO: Make other modes avaliable
+
+        table = ("stats", "stats_rx")[relax]
+
+        ret = await glob.sql.fetch(
+            "SELECT ranked_score_std AS ranked_score, "
+            "total_score_std AS total_score, accuracy_std AS accuracy, "
+            "playcount_std AS playcount, pp_std AS pp, "
+            f"level_std AS level FROM {table} " 
+            "WHERE id = %s", (self.id)
+        )
+
+        if not ret:
+            return None
+
+        if ret["pp"] >= 1:
+            # if the users pp is 
+            # higher or equal to
+            # one, add rank to the user
+            rank = await glob.sql.fetch(
+                f"SELECT COUNT(*) AS rank FROM {table} t "
+                "INNER JOIN users u ON u.id = t.id "
+                "WHERE t.id != %s AND t.pp_std > %s "
+                "ORDER BY t.pp_std DESC, t.total_score_std DESC LIMIT 1",
+                (self.id, self.pp)
+            )
+
+            ret["rank"] = rank["rank"]+1
+        else:
+            # if not, make the user
+            # not display any rank. (0)
+            ret["rank"] = 0
+
+        return ret
+
+    async def update_stats(self) -> bool:
+        ret = await self.get_stats(self.relax)
+
+        self.ranked_score = ret["ranked_score"]
+        self.accuracy = ret["accuracy"]
+        self.playcount = ret["playcount"]
+        self.total_score = ret["total_score"]
+        self.level = ret["level"]
+        self.rank = ret["rank"]
+        self.pp = int(ret["pp"])
+
+        return True
+
+    async def logout(self) -> None:
         if self.channels: 
-            for channel in self.channels:
+            for channel in self.channels[:]:
                 await glob.channels.leave_channel(self, channel.raw_name, kicked=True)
 
             self.channels.clear()
@@ -108,32 +158,37 @@ class Player:
         for player in glob.players.players:
             player.enqueue(await writer.Logout(self.id))
 
-    async def add_spectator(self, p):
+    async def add_spectator(self, p) -> None:
         # TODO: Create temp spec channel
         joined = await writer.FellasJoinSpec(p.id)
+
         for s in self.spectators:
             s.enqueue(joined)
             p.enqueue(await writer.FellasJoinSpec(s.id))
 
         self.enqueue(await writer.UsrJoinSpec(p.id))
         self.spectators.append(p)
+
         p.spectating = self
 
-    async def remove_spectator(self, p):
+    async def remove_spectator(self, p) -> None:
         # TODO: Remove chan and part chan
         left = await writer.FellasLeftSpec(p.id)
+
         for s in self.spectators:
             s.enqueue(left)
+
         self.enqueue(await writer.UsrLeftSpec(p.id))
         self.spectators.remove(p)
+
         p.spectating = None
 
-    async def get_friends(self):
+    async def get_friends(self) -> None:
         friends = await glob.sql.fetchall("SELECT user_id2 FROM friends WHERE user_id1 = %s", (self.id))
         for player in friends:
             self.friends.add(player[0])
 
-    async def handle_friend(self, user: int):
+    async def handle_friend(self, user: int) -> None:
         if not (t := await glob.players.get_user_by_id(user)):
             return # user isn't online; ignore
 

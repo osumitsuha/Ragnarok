@@ -36,3 +36,5 @@ players: list[Player] = Tokens()
 channels: list[Channel] = Channels()
 
 osu_key: str = config["osu_api_key"]
+
+beatmaps = {}

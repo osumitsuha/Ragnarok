@@ -2,6 +2,7 @@ from lib.responses import BanchoResponse
 from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from decorators import register, register_event
+from constants.mods import Mods
 from utils import log
 from constants.privileges import Privileges
 from utils import log
@@ -106,9 +107,11 @@ async def login(
 
         glob.bcrypt_cache[phash] = pmd5
 
-    #if await glob.players.get_user(user_info["username"]):
+    if await glob.players.get_user(user_info["username"]):
         # user is already online? sus
-        #return BanchoResponse(await writer.UserID(-1))
+        sus = await writer.Notification("You're already online on the server!")
+        sus += await writer.UserID(-1)
+        return BanchoResponse(sus)
 
     # invalid security hash (old ver probably using that)
     if len(client_info[3].split(":")) < 4:
@@ -165,16 +168,18 @@ async def login(
     data += await writer.FriendsList(*p.friends)
     data += await writer.UserPresence(p)
     data += await writer.UpdateStats(p)
-    
-    for channel in glob.channels.channels:
-        if channel.staff and p.is_staff:
-            data += await writer.ChanInfo(channel.name)
+    data += await writer.ChanInfoEnd()
 
+    for channel in glob.channels.channels:
         if channel.public:
             data += await writer.ChanInfo(channel.name)
 
-    data += await writer.ChanInfoEnd()
-    data += await writer.ChanJoin("#osu")
+        if channel.staff and p.is_staff:
+            data += await writer.ChanInfo(channel.name)
+            data += await writer.ChanJoin(channel.name)
+        
+        if channel.auto_join:
+            data += await writer.ChanJoin(channel.name)
 
     for player in glob.players.players:
         player.enqueue(await writer.UserPresence(p) + await writer.UpdateStats(p))
@@ -187,7 +192,7 @@ async def login(
         "made by Aoba and Simon.\n"
         "\n"
         "Authorization took " + str(round((time.time_ns() - start) / 1e6, 2)) + "ms."
-    )
+    ) 
 
     log.info(f"<{user_info['username']} | {user_info['id']}; {p.token}> logged in.")
 
@@ -211,6 +216,8 @@ async def change_action(p: Player, packet):
     p.current_mods = stats["current_mods"]
     p.play_mode = stats["play_mode"]
     p.beatmap_id = stats["beatmap_id"]
+
+    p.relax = int(bool(p.current_mods & Mods.RELAX))
 
     glob.players.enqueue(await writer.UpdateStats(p))
 
@@ -250,10 +257,8 @@ async def start_spectate(p: Player, packet):
         ("user", writer.Types.int32),
     ))
     host = await glob.players.get_user_by_id(data["user"])
-    if host == p.spectating:
-        if host == host:
-            return
-        host.remove_spectator(p)
+    if not host:
+        return
     await host.add_spectator(p)
 
 # id: 17
@@ -271,7 +276,7 @@ async def spectating_frames(p: Player, packet):
         ("frames", writer.Types.raw),
     ))
 
-    for t in p.spectators: #tuple
+    for t in p.spectators:
         t.enqueue(await writer.SpecFramesData(data["frames"]))
 
 # id: 21
@@ -284,7 +289,7 @@ async def unable_to_spec(p: Player, packet):
         ("users", writer.Types.int32),
     ))
     host.enqueue(await writer.UsrCantSpec(data["users"]))
-    for t in host.spectators: #tuple
+    for t in host.spectators:
             t.enqueue(await writer.UsrCantSpec(data["users"]))
 
 # id: 25
@@ -318,7 +323,7 @@ async def add_friend(p: Player, packet):
 
 # id: 74
 @register_event(BanchoPackets.OSU_FRIEND_REMOVE)
-async def add_friend(p: Player, packet):
+async def remove_friend(p: Player, packet):
     data = reader.read_packet(packet, (
         ("user", writer.Types.int32),
     ))

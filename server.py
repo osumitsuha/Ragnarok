@@ -29,7 +29,7 @@ async def startup():
 
     log.info("... Adding channels")
 
-    async for channel in glob.sql.iterall("SELECT name, description, public, staff FROM channels"):
+    async for channel in glob.sql.iterall("SELECT name, description, public, staff, auto_join, read_only FROM channels"):
         await glob.channels.add_channel(**channel)
 
     log.info("✓ Successfully added all avaliable channels")

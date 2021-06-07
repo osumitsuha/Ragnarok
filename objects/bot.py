@@ -20,6 +20,8 @@ class Louise:
         p.status = bStatus.WATCHING
         p.status_text = "over deez nutz"
 
+        p.bot = True
+
         await glob.players.add_user(p)
 
         for player in glob.players.players:

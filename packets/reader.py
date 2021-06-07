@@ -169,3 +169,5 @@ class Reader:
         ret = self.packet_data[self.offset:self.offset+self.length]
         self.offset += self.length
         return ret
+
+    # TODO: write replayframes and replayframesbundle reader

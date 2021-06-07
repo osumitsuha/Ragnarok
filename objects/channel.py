@@ -5,8 +5,9 @@ from objects import glob
 from utils import log
 
 class Channel:
-    def __init__(self, name, description, public=True, 
-                 staff=False, raw_name = None, ):
+    def __init__(self, name, description, public=True,
+                 staff=False, raw_name = None, 
+                 auto_join=False, read_only=False):
         self.name: str = name
         self.raw_name: str = raw_name if raw_name \
                                 else name
@@ -14,14 +15,16 @@ class Channel:
         self.description: str = description
         self.players_len: int = 0
         self.public: bool = public
+        self.read_only: bool = read_only
+        self.auto_join: bool = auto_join
         self.staff: bool = staff
 
 class Channels:
     def __init__(self):
         self.channels: list[Channel] = []
 
-    async def add_channel(self, name, description, public, staff, raw_name=None):
-        c = Channel(name, description, public, staff, raw_name)
+    async def add_channel(self, name, description, public, staff, auto_join, read_only, raw_name=None):
+        c = Channel(name, description, public, staff, raw_name, auto_join, read_only)
         
         self.channels.append(c)
 
@@ -64,10 +67,17 @@ class Channels:
         if not channel.startswith("#"):
             u = await glob.players.get_user(channel) # channel is the users username in this instance
 
+            if not u:
+                return # user isn't online; prevents the server from crashing
+
             u.enqueue(await writer.SendMessage(p.username, msg, channel))
 
-        if not (self.get_channel(channel)):
+        if not (chan := self.get_channel(channel)):
             return # channel not found; ignore.
+
+        if chan.read_only and not p.bot:
+            return # ignore message in read only chats, 
+                   # that doesn't come from bots
 
         # TODO: checks.
         for u in glob.players.players:
@@ -90,5 +100,3 @@ class Channels:
                     resp = await cmd["trigger"](p, channel, msg)
 
                     glob.players.enqueue(await writer.SendMessage("Louise", resp, channel))
-        
-

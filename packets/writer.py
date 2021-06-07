@@ -67,10 +67,10 @@ async def write_int32(
 async def write_int32_list(
     values: tuple[int]
 ) -> bytearray:
-    data = bytearray(len(values).to_bytes(2, 'little')) #i16
+    data = bytearray(len(values).to_bytes(2, 'little'))
 
     for value in values:
-        data += value.to_bytes(4, 'little') #i32
+        data += value.to_bytes(4, 'little')
 
     return data
 
@@ -158,7 +158,7 @@ async def UsrCantSpec(id: int) -> bytes:
 async def SpecFramesData(data: bytes) -> bytes:
     return await write(
         BanchoPackets.CHO_SPECTATE_FRAMES,
-        (data, Types.raw)
+        (data[7:], Types.raw) # [7:] seems to be smoother than full raw packet, so i do a little bit offset
     )
 
 async def Notification(msg: str) -> bytes:
@@ -210,6 +210,11 @@ async def UpdateFriends(friends_id: tuple[int]):
 async def UpdateStats(p):
     if p not in glob.players.players:
         return b""
+
+    if p.bot:
+        return b""
+
+    await p.update_stats()
 
     return await write(
         BanchoPackets.CHO_USER_STATS,
