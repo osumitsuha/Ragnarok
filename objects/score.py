@@ -152,38 +152,39 @@ class Score:
     async def save_to_db(self):
         # get old personal best,
         # if there is one.
-        if (ret := await glob.sql.fetch(
-            "SELECT score, mode, relax, count_300, "
-            "count_100, count_50, count_geki, count_katu, "
-            "count_miss, max_combo, accuracy, perfect, "
-            "perfect, rank, mods, passed, exited, play_time, "
-            "mode, submitted, pp, id, user_id FROM scores "
-            "WHERE user_id = %s AND relax = %s AND hash_md5 = %s "
-            "AND mode = %s AND passed = 1 LIMIT 1", 
-            (self.player.id, self.relax, self.map.hash_md5, self.mode))
-        ):
-            pb = Score(**ret)
+        if self.passed:
+            if (ret := await glob.sql.fetch(
+                "SELECT score, mode, relax, count_300, "
+                "count_100, count_50, count_geki, count_katu, "
+                "count_miss, max_combo, accuracy, perfect, "
+                "perfect, rank, mods, passed, exited, play_time, "
+                "mode, submitted, pp, id, user_id FROM scores "
+                "WHERE user_id = %s AND relax = %s AND hash_md5 = %s "
+                "AND mode = %s AND passed = 1 LIMIT 1", 
+                (self.player.id, self.relax, self.map.hash_md5, self.mode))
+            ):
+                pb = Score(**ret)
 
-            pb.player = await glob.players.get_user_by_id(ret["user_id"])
-            pb.map = self.map
+                pb.player = await glob.players.get_user_by_id(ret["user_id"])
+                pb.map = self.map
 
-            await pb.calculate_position()
+                await pb.calculate_position()
 
-            # if we found a passed score
-            # that has more score on the map, 
-            # we set it to not passed.
-            if pb.score < self.score:
-                await glob.sql.execute(
-                    "UPDATE scores SET passed = 0 WHERE user_id = %s AND relax = %s "
-                    "AND hash_md5 = %s AND mode = %s  AND passed = 1", 
-                    (self.player.id, self.relax, self.map.hash_md5, self.mode)
-                )
+                # if we found a passed score
+                # that has more score on the map, 
+                # we set it to not passed.
+                if pb.score < self.score:
+                    await glob.sql.execute(
+                        "UPDATE scores SET passed = 0 WHERE user_id = %s AND relax = %s "
+                        "AND hash_md5 = %s AND mode = %s AND passed = 1", 
+                        (self.player.id, self.relax, self.map.hash_md5, self.mode)
+                    )
 
-            if [pb.web_format, pb.mode, pb.relax] in self.map.scores:
-                if glob.debug:
-                    log.debug("Removing a players old personal best from cache.")
+                if [pb.web_format, pb.mode, pb.relax] in self.map.scores:
+                    if glob.debug:
+                        log.debug("Removing a players old personal best from cache.")
 
-                self.map.scores.remove([pb.web_format, pb.mode, pb.relax])
+                    self.map.scores.remove([pb.web_format, pb.mode, pb.relax])
 
         await glob.sql.execute(
             "INSERT INTO scores (hash_md5, user_id, score, pp, "

@@ -32,7 +32,7 @@ async def get_scores(req: Request):
         {0}
         [bold:0,size:20]{0}|{1}
         {0}
-        {0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Personal Best and top 50 scores
+        {0}|{1}|{2}|{3s}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Personal Best and top 50 scores
 
         {0} = Beatmap Status
         false/true = Server has OSZ2 file (Must set to "false" to allow score submission)
@@ -77,6 +77,9 @@ async def get_scores(req: Request):
 
     if not b:
         return Response("-1|true")
+        
+    if b.approved <= 0:
+        return Response("0|false")
 
     b.approved += 1
 
@@ -91,9 +94,6 @@ async def get_scores(req: Request):
 
     if int(req.query_params["mods"]) & Mods.RELAX and not p.relax:
         p.relax = True
-
-    if b.approved <= 0:
-        return Response("0|false")
 
     ret = b.web_format
 
@@ -236,7 +236,7 @@ async def score_submission(req: Request):
                     return Response("error: no")
 
                 async with aiofiles.open(f".data/replays/{s.id}.osr", "wb+") as file:
-                    await file.write(await replay.write_replay(body["score"], s))
+                    await file.write(await body["score"].read())
 
                 # Leaderboard cache handling
                 for position in s.map.scores:
@@ -269,3 +269,15 @@ async def score_submission(req: Request):
         log.debug(f"Submit handler took: {(time.time_ns() - start) / 1e6}ms")
 
     return Response("error: ban")
+
+@register_osu("osu-getreplay.php")
+@check_auth("u", "h")
+async def get_replay(req: Request):
+    async with aiofiles.open(f".data/replays/{req.query_params['c']}.osr", "rb") as raw:
+        if (replay := await raw.read()):
+            return Response(replay)
+
+        return Response("")
+
+@register_osu("osu-comment", method="POST")
+async def get_beatmap_comments(req: Request): ...

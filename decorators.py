@@ -1,4 +1,5 @@
 from starlette.routing import Route
+from starlette.responses import Response
 from constants.packets import BanchoPackets
 from typing import Callable
 from functools import wraps
@@ -34,9 +35,11 @@ def check_auth(u: str, pw: str):
     def decorator(cb: Callable) -> Callable:
         @wraps(cb)
         async def wrapper(req, *args, **kwargs):
-            # doesn't work properly
+            # sus
             # if not await glob.players.get_user(u):
-            #     log.info("login error")
+            #     return Response("")
+
+            # elif not pw in glob.bcrypt_cache:
             #     return Response("")
 
             return await cb(req, *args, **kwargs)
