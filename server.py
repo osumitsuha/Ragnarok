@@ -25,7 +25,10 @@ async def startup():
     log.info("✓ Connected to the database!")
 
     log.info("... Connecting Louise to the server")
-    await Louise.init()
+    if not await Louise.init():
+        log.error("✗ Couldn't find Louise in the database.")
+        os.exit(1)
+        
     log.info("✓ Successfully connected Louise!")
 
     log.info("... Adding channels")

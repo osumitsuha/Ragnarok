@@ -65,9 +65,10 @@ class Channels:
             return # ignore if the user is restricted
         
         if not channel.startswith("#"):
-            u = await glob.players.get_user(username=channel) # channel is the users username in this instance
+            u = await glob.players.get_user(channel) # channel is the users username in this instance
 
             if not u:
+                p.enqueue(await writer.SendMessage("Louise", "The player you're trying to contact, is currently offline.", channel))
                 return # user isn't online; prevents the server from crashing
 
             u.enqueue(await writer.SendMessage(p.username, msg, channel))
