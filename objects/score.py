@@ -4,53 +4,61 @@ from constants.playmode import Mode
 from objects.player import Player
 from objects.beatmap import Beatmap
 from constants.mods import Mods
+from constants.playmode import Mode
 from base64 import b64decode
+from enum import IntEnum
 from objects import glob
 from utils import log
+from oppai import *
 import math
 import time
 
+class SubmitStatus(IntEnum):
+    FAILED = 0
+    QUIT = 1
+    PASSED = 2
+    BEST = 3
+
 class Score:
-    def __init__(self, p: Player = None, **kwargs):
-        self.user_id = kwargs.get("user_id", 1)
+    def __init__(self):
+        self.player: Player = None
+        self.map: Beatmap = None
+
+        self.id: int = 0
+
+        self.score: int = 0
+        self.pp: float = 0.0
+
+        self.count_300: int = 0
+        self.count_100: int = 0
+        self.count_50: int = 0 
+
+        self.count_geki: int = 0
+        self.count_katu: int = 0
+        self.count_miss: int = 0
         
-        self.player: Player = p
-        self.map: Beatmap = kwargs.get("map", None)
-
-        self.id: int = kwargs.get("id", 0)
-
-        self.score: int = kwargs.get("score", 0)
-        self.pp: float = kwargs.get("pp", 0.0)
-
-        self.count_300: int = kwargs.get("count_300", 0)
-        self.count_100: int = kwargs.get("count_100", 0)
-        self.count_50: int = kwargs.get("count_50", 0)
-
-        self.count_geki: int = kwargs.get("count_geki", 0)
-        self.count_katu: int = kwargs.get("count_katu", 0)
-        self.count_miss: int = kwargs.get("count_miss", 0)
-
+        self.max_combo: int = 0
+        self.accuracy: float = 0.0
         
-        self.max_combo: int = kwargs.get("max_combo", 0)
-        self.accuracy: float = kwargs.get("accuracy", 0.0)
+        self.perfect: bool = False
+
+        self.rank: str = ""
+
+        self.mods: int = 0
+        self.status: SubmitStatus = SubmitStatus.FAILED
+
+        self.play_time: int = 0
+
+        self.mode: Mode = Mode.OSU
         
-        self.perfect: bool = kwargs.get("perfect", False)
+        self.submitted: int = math.ceil(time.time())
 
-        self.rank: str = kwargs.get("rank", "")
-
-        self.mods: int = kwargs.get("mods", 0)
-        self.passed: bool = kwargs.get("passed", False)
-        self.exited: bool = kwargs.get("exited", False)
-
-        self.play_time: int = kwargs.get("play_time", 0)
-
-        self.mode: int = kwargs.get("mode", 0)
-        
-        self.submitted: int = kwargs.get("submitted", math.ceil(time.time()))
-
-        self.relax: bool = kwargs.get("relax", False)
+        self.relax: bool = False
 
         self.position: int = 0
+
+        # previous_best
+        self.pb: Score = None
 
     @property
     def web_format(self):
@@ -60,9 +68,56 @@ class Score:
                f"{self.position}|{self.submitted}|1"
 
     @classmethod
+    async def set_data_from_sql(cls, score_id: int) -> None:
+        data = await glob.sql.fetch(
+            "SELECT id, user_id, hash_md5, score, pp, count_300, count_100, "
+            "count_50, count_geki, count_katu, count_miss, "
+            "max_combo, accuracy, perfect, rank, mods, status, "
+            "play_time, mode, submitted, relax FROM scores "
+            "WHERE id = %s", (score_id)
+        )
+
+        s = cls()
+
+        s.player = await glob.players.get_user_offline(data["user_id"])
+        s.map = await Beatmap.get_beatmap(data["hash_md5"])
+
+        s.score = data["score"]
+        s.pp = data["pp"]
+
+        s.count_300 = data["count_300"]
+        s.count_100 = data["count_100"]
+        s.count_50 = data["count_50"]
+        s.count_geki = data["count_geki"]
+        s.count_katu = data["count_katu"]
+        s.count_miss = data["count_miss"]
+
+        s.max_combo = data["max_combo"]
+        s.accuracy = data["accuracy"]
+        
+        s.perfect = data["perfect"]
+
+        s.rank = data["rank"]
+        s.mods = data["mods"]
+        
+        s.play_time = data["play_time"]
+
+        s.status = SubmitStatus(data["status"])
+        s.mode = Mode(data["mode"])
+
+        s.submitted = data["submitted"]
+
+        s.relax = data["relax"]
+
+        await s.calculate_position()
+        
+        return s
+
+    @classmethod
     async def set_data_from_submission(cls, 
             score_enc: bytes, iv: bytes, 
-            key: str, exited: int, ft: int
+            key: str, exited: int,
+            security_hash: bytes
         ) -> None:
         score_latin = b64decode(score_enc).decode("latin_1")
         iv_latin = b64decode(iv).decode("latin_1")
@@ -80,28 +135,88 @@ class Score:
         
         (s.count_300, s.count_100, s.count_50, s.count_geki, s.count_katu, s.count_miss, s.score, s.max_combo) = map(int, data[3:-7])
 
-        s.mode = int(data[15])
+        s.mode = Mode(int(data[15]))
 
         s.calculate_accuracy()
-        s.perfect = s.accuracy == 100.0
+        s.perfect = s.max_combo == s.map.max_combo
 
         s.rank = data[12]
 
         s.mods = int(data[13])
         s.passed = data[14] == "True"
-        s.exited = exited == 1
 
-        s.play_time = ft or s.map.drain * 1000
-
-        if s.mods & Mods.DOUBLETIME or s.mods & Mods.NIGHTCORE:
-            s.play_time = ft or s.map.drain * (1 - .33) * 1000
-
-        if s.mods & Mods.HALFTIME:
-            s.play_time = ft or s.map.drain * 1.33 * 1000
+        if exited:
+            s.status = SubmitStatus.QUIT
 
         s.relax = bool(int(data[13]) & Mods.RELAX)
 
-        await s.calculate_position() 
+        if s.passed: 
+            await s.calculate_position() 
+
+            ez = ezpp_new()
+
+            if s.mods: 
+                ezpp_set_mods(ez, s.mods)
+
+            ezpp_set_combo(ez, s.max_combo)
+            ezpp_set_nmiss(ez, s.count_miss)
+            ezpp_set_accuracy_percent(ez, s.accuracy)
+
+            ezpp(ez, f".data/beatmaps/{s.map.file}")
+            s.pp = ezpp_pp(ez)
+
+            ezpp_free(ez)
+
+            # find our previous best score on the map
+            if (prev_best := await glob.sql.fetch(
+                "SELECT id FROM scores WHERE user_id = %s "
+                "AND relax = %s AND hash_md5 = %s "
+                "AND mode = %s AND status = 3 LIMIT 1", 
+                (s.player.id, s.relax, s.map.hash_md5, s.mode.value))
+            ):
+                s.pb = await Score.set_data_from_sql(prev_best["id"])
+
+                # if we found a personal best score
+                # that has more score on the map, 
+                # we set it to passed.
+                if s.pb.pp < s.pp if s.relax else s.pb.score < s.score:
+                    s.status = SubmitStatus.BEST
+                    s.pb.status = SubmitStatus.PASSED
+
+                    await glob.sql.execute(
+                        "UPDATE scores SET status = 2 WHERE user_id = %s AND relax = %s "
+                        "AND hash_md5 = %s AND mode = %s AND status = 3", 
+                        (s.player.id, s.relax, s.map.hash_md5, s.mode.value)
+                    )
+                else:
+                    s.status = SubmitStatus.PASSED
+            else:
+                # if we find no old personal best
+                # we can just set the status to best
+                s.status = SubmitStatus.BEST
+        else:
+            s.status = SubmitStatus.FAILED
+
+        # Currently all I need for this checksum
+        # to work, is a storyboard checksum? Yeah,
+        # I don't know either. I KNOW
+
+        # security_hash = RijndaelCbc(key, iv_latin, ZeroPadding(32), 32).decrypt(b64decode(security_hash).decode("latin_1")).decode()
+        # reci_check_sum = data[2]
+
+        # check_sum = md5(
+        #     f"chickenmcnuggets"
+        #     f"{s.count_100 + s.count_300}o15{s.count_50}{s.count_geki}"
+        #     f"smustard{s.count_katu}{s.count_miss}uu"
+        #     f"{s.map.hash_md5}{s.max_combo}{str(s.perfect)}"
+        #     f"{s.player.username}{s.score}{s.rank}{s.mods}Q{str(s.passed)}"    
+        #     f"{s.mode}{data[17].strip()}{data[16]}{security_hash}{storyboardchecksum}"
+        #     .encode()
+        # ).hexdigest()
+
+        # if reci_check_sum != check_sum:
+        #     log.error(f"{s.player.username} tried to submit a score with an invalid score checksum.")
+        #     return
 
         return s
 
@@ -112,10 +227,10 @@ class Score:
             "INNER JOIN users u ON u.id = s.user_id "
             "WHERE s.score > %s AND s.relax = %s "
             "AND b.hash = %s AND u.privileges & 4 "
-            "AND s.passed = 1 AND s.mode = %s "
+            "AND s.status = 3 AND s.mode = %s "
             "ORDER BY s.score DESC, s.submitted DESC",
             (self.score, self.relax, 
-             self.map.hash_md5, self.mode, )
+             self.map.hash_md5, self.mode.value)
         )
 
         self.position = ret["rank"] + 1
@@ -152,53 +267,26 @@ class Score:
     async def save_to_db(self):
         # get old personal best,
         # if there is one.
-        if self.passed:
-            if (ret := await glob.sql.fetch(
-                "SELECT score, mode, relax, count_300, "
-                "count_100, count_50, count_geki, count_katu, "
-                "count_miss, max_combo, accuracy, perfect, "
-                "perfect, rank, mods, passed, exited, play_time, "
-                "mode, submitted, pp, id, user_id FROM scores "
-                "WHERE user_id = %s AND relax = %s AND hash_md5 = %s "
-                "AND mode = %s AND passed = 1 LIMIT 1", 
-                (self.player.id, self.relax, self.map.hash_md5, self.mode))
-            ):
-                pb = Score(**ret)
+        if self.passed and self.pb:
+            if [self.pb.web_format, self.pb.mode, self.pb.relax] in self.map.scores:
+                if glob.debug:
+                    log.debug("Removing a players old personal best from cache.")
 
-                pb.player = await glob.players.get_user_by_id(ret["user_id"])
-                pb.map = self.map
-
-                await pb.calculate_position()
-
-                # if we found a passed score
-                # that has more score on the map, 
-                # we set it to not passed.
-                if pb.score < self.score:
-                    await glob.sql.execute(
-                        "UPDATE scores SET passed = 0 WHERE user_id = %s AND relax = %s "
-                        "AND hash_md5 = %s AND mode = %s AND passed = 1", 
-                        (self.player.id, self.relax, self.map.hash_md5, self.mode)
-                    )
-
-                if [pb.web_format, pb.mode, pb.relax] in self.map.scores:
-                    if glob.debug:
-                        log.debug("Removing a players old personal best from cache.")
-
-                    self.map.scores.remove([pb.web_format, pb.mode, pb.relax])
+                self.map.scores.remove([self.pb.web_format, self.pb.mode, self.pb.relax])
 
         await glob.sql.execute(
             "INSERT INTO scores (hash_md5, user_id, score, pp, "
             "count_300, count_100, count_50, count_geki, "
             "count_katu, count_miss, max_combo, accuracy, "
-            "perfect, rank, mods, passed, exited, "
-            "play_time, mode, submitted, relax) VALUES "
+            "perfect, rank, mods, status, play_time, "
+            " mode, submitted, relax) VALUES "
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-            "%s, %s, %s, %s, %s, %s, %s, %s)",
+            "%s, %s, %s, %s, %s, %s, %s)",
             (
                 self.map.hash_md5, self.player.id, self.score, self.pp,
                 self.count_300, self.count_100, self.count_50, self.count_geki, 
                 self.count_katu, self.count_miss, self.max_combo, self.accuracy,
-                self.perfect, self.rank, self.mods, self.passed, self.exited,
-                self.play_time, self.mode, self.submitted, self.relax
+                self.perfect, self.rank, self.mods, self.status.value, self.play_time, 
+                self.mode.value, self.submitted, self.relax
             )
         )

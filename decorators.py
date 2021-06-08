@@ -30,20 +30,3 @@ def register_osu(route: str, method: str = "GET"):
         })
 
     return decorator
-
-def check_auth(u: str, pw: str):
-    def decorator(cb: Callable) -> Callable:
-        @wraps(cb)
-        async def wrapper(req, *args, **kwargs):
-            # sus
-            # if not await glob.players.get_user(u):
-            #     return Response("")
-
-            # elif not pw in glob.bcrypt_cache:
-            #     return Response("")
-
-            return await cb(req, *args, **kwargs)
-
-        return wrapper
-
-    return decorator

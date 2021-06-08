@@ -3,8 +3,6 @@ from objects.bot import Louise
 from packets import writer
 from typing import Callable
 from objects import glob
-from objects.player import Player
-from utils import log
 import random
 
 def register_command(cmd: str, required_perms = Privileges.USER):
@@ -32,8 +30,8 @@ async def kick_user(p, chan, message):
     if len(args) < 1:
         return "Usage: !kick <username>"
 
-    if not (t := await glob.players.get_user(" ".join(args))):
-        return "Player isn't online, or couldn't be found."
+    if not (t := await glob.players.get_user_offline(" ".join(args))):
+        return "Player isn't online or couldn't be found in the database"
 
     await t.logout()
     t.enqueue(await writer.Notification("You've been kicked!"))
@@ -52,15 +50,8 @@ async def restrict_user(p, chan, message):
     if len(args) < 1:
         return "Usage: !restrict <username>"
 
-    if not (t := await glob.players.get_user(" ".join(args))):
-        # if can't be found in cache thingy
-        # try getting it from database
-        if not (d := await glob.sql.fetch("SELECT username, id, privileges, passhash FROM users WHERE username = %s", (" ".join(args)))):
-            return "Player couldn't be found in the database"
-
-        d["ip"] = "127.0.0.1" # locallhost cause ip is needed 
-
-        t = Player(**d)
+    if not (t := await glob.players.get_user_offline(" ".join(args))):
+        return "Player isn't online or couldn't be found in the database"
 
     if t.is_restricted:
         return "Player is already restricted? Did you mean to unrestrict them?"
@@ -82,15 +73,8 @@ async def unrestrict_user(p, chan, message):
     if len(args) < 1:
         return "Usage: !unrestrict <username>"
 
-    if not (t := await glob.players.get_user(" ".join(args))):
-        # if can't be found in cache thingy
-        # try getting it from database
-        if not (d := await glob.sql.fetch("SELECT username, id, privileges, passhash FROM users WHERE username = %s", (" ".join(args)))):
-            return "Player couldn't be found in the database"
-
-        d["ip"] = "127.0.0.1" # locallhost cause ip is needed 
-
-        t = Player(**d)
+    if not (t := await glob.players.get_user_offline(" ".join(args))):
+        return "Player isn't online or couldn't be found in the database"
 
     if not t.is_restricted:
         return "Player isn't even restricted?"
@@ -109,7 +93,7 @@ async def louise_commands(p, chan, message):
         return "louise."
 
     if args[0] == "reconnect":
-        if await glob.players.get_user_by_id(1):
+        if await glob.players.get_user(1):
             return "Louise is already connected."
 
         await Louise.init()
@@ -131,15 +115,8 @@ async def user_stats(p, chan, message):
     if len(args) < 2:
         return "Usage: !stats <username> <rx/vn>"
 
-    if not (t := await glob.players.get_user(args[0])):
-        # if can't be found in cache thingy
-        # try getting it from database
-        if not (d := await glob.sql.fetch("SELECT username, id, privileges, passhash FROM users WHERE username = %s", (args[0]))):
-            return "Player couldn't be found in the database"
-
-        d["ip"] = "127.0.0.1" # locallhost cause ip is needed 
-
-        t = Player(**d)
+    if not (t := await glob.players.get_user_offline(" ".join(args))):
+        return "Player isn't online or couldn't be found in the database"
 
     relax = 0
 

@@ -70,6 +70,10 @@ class Player:
     @property
     def embed(self) -> str:
         return f"[https://osu.mitsuha.pw/users/{self.id} {self.username}]"
+    
+    @property
+    def url(self) -> str:
+        return f"https://osu.mitsuha.pw/users/{self.id}"
 
     def safe_username(self, name) -> str:
         return name.lower().replace(" ", "_")
@@ -102,9 +106,6 @@ class Player:
             "WHERE id = %s", (self.id)
         )
 
-        if not ret:
-            return None
-
         if ret["pp"] >= 1:
             # if the users pp is 
             # higher or equal to
@@ -125,6 +126,7 @@ class Player:
 
         return ret
 
+    # might do this differently at some point?
     async def update_stats(self) -> bool:
         ret = await self.get_stats(self.relax)
 
@@ -189,7 +191,7 @@ class Player:
             self.friends.add(player[0])
 
     async def handle_friend(self, user: int) -> None:
-        if not (t := await glob.players.get_user_by_id(user)):
+        if not (t := await glob.players.get_user(user)):
             return # user isn't online; ignore
 
         # remove friend
@@ -214,5 +216,8 @@ class Player:
         self.privileges -= Privileges.VERIFIED
 
         await glob.db.execute("UPDATE users SET privileges -= 4 WHERE id = %s", (self.id))
+
+        # notify user
+        self.enqueue(await writer.Notification("Your account has been put in restricted mode!"))
 
         log.info(f"{self.username} has been put in restricted mode!")

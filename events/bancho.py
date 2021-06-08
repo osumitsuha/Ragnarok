@@ -32,7 +32,7 @@ async def handle_bancho(req: Request):
         token = req.headers["osu-token"]
         packet_id = body[0]
         
-        if not (player := await glob.players.get_user_by_token(token)):
+        if not (player := await glob.players.get_user(token)):
             return BanchoResponse(bytes(
                 await writer.Notification("Server has restarted") + await writer.ServerRestart()
             ))
@@ -47,15 +47,16 @@ async def handle_bancho(req: Request):
 
         for handle in glob.registered_packets:
             if packet_id == handle["packet"]:
-                if glob.debug:
-                    log.debug(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username}")
-
+                start = time.time_ns()
                 # ignore restricted user trying 
                 # to do unrestricted packets
                 if player.is_restricted and (not handle["restricted"]):
                     continue
 
                 await handle["func"](player, body)
+
+                if glob.debug:
+                    log.debug(f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username} - {round((time.time_ns() - start) / 1e6, 2)}ms")
 
         if player.queue:
             response += player.dequeue()
@@ -109,9 +110,10 @@ async def login(
 
     if await glob.players.get_user(user_info["username"]):
         # user is already online? sus
-        sus = await writer.Notification("You're already online on the server!")
-        sus += await writer.UserID(-1)
-        return BanchoResponse(sus)
+        return BanchoResponse(
+            await writer.Notification("You're already online on the server!") + \
+            await writer.UserID(-1)
+        )
 
     # invalid security hash (old ver probably using that)
     if len(client_info[3].split(":")) < 4:
@@ -177,9 +179,11 @@ async def login(
         if channel.staff and p.is_staff:
             data += await writer.ChanInfo(channel.name)
             data += await writer.ChanJoin(channel.name)
+            await glob.channels.join_channel(p, channel.name)
         
         if channel.auto_join:
             data += await writer.ChanJoin(channel.name)
+            await glob.channels.join_channel(p, channel.name)
 
     for player in glob.players.players:
         player.enqueue(await writer.UserPresence(p) + await writer.UpdateStats(p))
@@ -256,9 +260,11 @@ async def start_spectate(p: Player, packet):
     data = reader.read_packet(packet, (
         ("user", writer.Types.int32),
     ))
-    host = await glob.players.get_user_by_id(data["user"])
+    host = await glob.players.get_user(data["user"])
+
     if not host:
         return
+
     await host.add_spectator(p)
 
 # id: 17
@@ -362,7 +368,7 @@ async def request_stats(p: Player, packet):
         if user == p.id:
             return
 
-        u = await glob.players.get_user_by_id(user)
+        u = await glob.players.get_user(user)
 
         u.enqueue(await writer.UpdateStats(u))
 
@@ -381,7 +387,7 @@ async def request_stats(p: Player, packet):
         if user == p.id:
             return
 
-        u = await glob.players.get_user_by_id(user)
+        u = await glob.players.get_user(user)
 
         u.enqueue(await writer.UserPresence(u))
 

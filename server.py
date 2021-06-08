@@ -10,7 +10,8 @@ import os
 async def startup():
     print(f"\033[94m{glob.title_card}")
 
-    for _path in (".data/avatars", ".data/replays", ".data/beatmaps"):
+    for _path in (".data/avatars", ".data/replays", 
+                  ".data/beatmaps", ".data/storyboards"):
         if not os.path.exists(_path):
             log.warning(f"You're missing the folder {_path}! Don't worry we'll add it for you!")
 

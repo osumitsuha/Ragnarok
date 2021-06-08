@@ -2,26 +2,54 @@ from starlette.requests import Request
 from starlette.responses import Response
 from objects.beatmap import Beatmap
 from constants.mods import Mods
-from objects.player import Player
 from objects import glob
 from utils import log
-from decorators import register_osu, check_auth, register
-from objects.score import Score
-from utils import replay
+from decorators import register_osu, register
+from objects.score import Score, SubmitStatus
+from typing import Callable
+from functools import wraps
 import aiofiles
+import aiohttp
 import time
+import math
+import os
+
+def check_auth(u: str, pw: str):
+    def decorator(cb: Callable) -> Callable:
+        @wraps(cb)
+        async def wrapper(req, *args, **kwargs):
+            player = req.query_params[u]
+            password = req.query_params[pw]
+
+            if not (p := await glob.players.get_user(player)):
+                return Response("")
+
+            if p.passhash in glob.bcrypt_cache:
+                if password.encode("utf-8") != glob.bcrypt_cache[p.passhash]:
+                    return Response("")
+
+            return await cb(req, *args, **kwargs)
+
+        return wrapper
+
+    return decorator
 
 @register("/web/{url:str}", methods=["GET", "POST"])
 async def handle_osu(req: Request):
     if req.url._url.startswith("https://osu.mitsuha.pw"):
+        start = time.time_ns()
         for route in glob.registered_osu_routes:
             if route["route"] == req.path_params["url"]:
                 if route["method"] != req.method:
                     return Response("")
 
-                return await route["func"](req)
-
-    return Response("")
+                resp = await route["func"](req)
+                
+                log.info(f"[{req.method}] /web/{req.path_params['url']} - {round((time.time_ns() - start) / 1e6, 2)}ms")
+                return resp
+    
+        log.error(f"[{req.method}] /web/{req.path_params['url']} - {round((time.time_ns() - start) / 1e6, 2)}ms")
+        return Response("")
 
 @register_osu("osu-osz2-getscores.php")
 @check_auth("us", "ha")
@@ -64,8 +92,6 @@ async def get_scores(req: Request):
         {14} = Date Played (Unix)
         {15} = Has replay saved on server
     """
-    start = time.time_ns()
-
     hash = req.query_params["c"]
     mode = int(req.query_params["m"])
     # beatmap_id = req.query_params["i"]
@@ -96,28 +122,18 @@ async def get_scores(req: Request):
         p.relax = True
 
     ret = b.web_format
+    order = ("score", "pp")[int(p.relax)]
 
     if b.approved >= 1:
         if not (data := await glob.sql.fetch(
-            "SELECT s.id, s.hash_md5, s.score, s.pp, s.count_300, s.count_100, "
-            "s.count_50, s.count_geki, s.count_katu, s.count_miss, "
-            "s.max_combo, s.accuracy, s.perfect, s.rank, s.mods, s.passed, "
-            "s.exited, s.play_time, s.mode, s.submitted, s.relax FROM scores s "
-            "INNER JOIN beatmaps b ON b.hash = s.hash_md5 WHERE s.user_id = %s "
-            "AND s.relax = %s AND b.hash = %s AND s.mode = %s AND s.passed = 1 "
-            "ORDER BY s.score DESC LIMIT 1",
+            "SELECT id FROM scores WHERE user_id = %s "
+            "AND relax = %s AND hash_md5 = %s AND mode = %s "
+            f"AND status = 3 ORDER BY {order} DESC LIMIT 1",
             (p.id, p.relax, b.hash_md5, mode)
         )):
             ret += "\n"
         else:
-            data["map"] = b
-
-            s = Score(p=p, **data)
-
-            s.position = 0
-
-            if not p.is_restricted:
-                await s.calculate_position() 
+            s = await Score.set_data_from_sql(data["id"])
 
             ret += s.web_format
 
@@ -126,8 +142,7 @@ async def get_scores(req: Request):
         # and i'm not really sure how i can make
         # it so it does work the way i want, i'll
         # be working on this another time, but
-        # it still works; edit: i made it work 
-        # the way i want.
+        # it still works
 
         # any() with b.scores doesn't work.
         # its annoying.
@@ -143,7 +158,7 @@ async def get_scores(req: Request):
 
         if len(b.scores) == 0:
             missing_mode = True
-        
+
         if missing_mode or missing_relax:
             if glob.debug:
                 log.debug(f"Caching scores for [mode: {mode} | relax: {p.relax}] for {b.full_title}")
@@ -153,23 +168,13 @@ async def get_scores(req: Request):
             # since I feel like it looks weird,
 
             async for play in glob.sql.iterall(
-                "SELECT s.id, s.user_id, s.hash_md5, s.score, s.pp, s.count_300, s.count_100, "
-                "s.count_50, s.count_geki, s.count_katu, s.count_miss, "
-                "s.max_combo, s.accuracy, s.perfect, s.rank, s.mods, s.passed, "
-                "s.exited, s.play_time, s.mode, s.submitted, s.relax FROM scores s "
-                "INNER JOIN beatmaps b ON b.hash = s.hash_md5 "
-                "INNER JOIN users u ON u.id = s.user_id "
-                "WHERE b.hash = %s AND s.mode = %s AND s.relax = %s AND u.privileges & 4 AND s.passed = 1 "
-                "ORDER BY s.score DESC, s.submitted ASC LIMIT 50",
+                "SELECT id FROM scores WHERE hash_md5 = %s "
+                "AND mode = %s AND relax = %s AND status = 3 "
+                f"ORDER BY {order} DESC, submitted ASC LIMIT 50",
                 (b.hash_md5, mode, p.relax)
             ):
-                d = await glob.sql.fetch("SELECT username, id, privileges, passhash FROM users WHERE id = %s", (play["user_id"]))
                 
-                d["ip"] = "127.0.0.1"
-                play["map"] = b
-
-                lp = Player(**d)
-                ls = Score(p=lp, **play)
+                ls = await Score.set_data_from_sql(play["id"])
 
                 await ls.calculate_position() 
 
@@ -183,19 +188,19 @@ async def get_scores(req: Request):
 
     ret += "".join(fl)
 
+    if not os.path.exists(f".data/beatmaps/{b.file}"):
+        async with aiohttp.ClientSession() as sess:
+            async with sess.get(f"https://old.ppy.sh/osu/{b.map_id}") as resp:
+                async with aiofiles.open(f".data/beatmaps/{b.file}", "w+") as osu:
+                    await osu.write(await resp.text())
+
     if not hash in glob.beatmaps:
         glob.beatmaps[hash] = b
-
-    if glob.debug:
-        log.debug(f"It took {(time.time_ns() - start) / 1e6}ms to load the leaderboard")
 
     return Response(ret) #placeholder
 
 @register_osu("osu-submit-modular-selector.php", method="POST")
 async def score_submission(req: Request):
-    # TODO: chart
-    start = time.time_ns()
-
     body = await req.form()
 
     if not body.get("osuver").startswith("2021"):
@@ -205,7 +210,7 @@ async def score_submission(req: Request):
 
     s = await Score.set_data_from_submission(
         body.multi_items()[2][1], body["iv"], 
-        submission_key, int(body["x"]), int(body["ft"])
+        submission_key, int(body["x"]), body["s"]
     )
 
     if not s:
@@ -223,11 +228,16 @@ async def score_submission(req: Request):
     s.id = await glob.sql.fetch("SELECT id FROM scores ORDER BY id DESC LIMIT 1") 
     s.id = s.id["id"] + 1
 
+    s.play_time = body["st" if s.passed else "ft"]
+
     # handle needed things, if the map is ranked.
     if s.map.approved >= 1:
         if not s.player.is_restricted:
+            s.map.plays += 1
+
             if s.passed:
-                await s.calculate_position() 
+                s.map.passes += 1
+
                 # restrict the player if they
                 # somehow managed to submit a 
                 # score without a replay.
@@ -247,28 +257,80 @@ async def score_submission(req: Request):
 
                 leaderboard.append([s.web_format, s.mode, s.relax])
 
-            # Maybe this needs to be done a
-            # different way? Well see till then.
-            if s.position == 1:
-                modes = {
-                    0: "osu!",
-                    1: "osu!taiko",
-                    2: "osu!catch",
-                    3: "osu!mania"
-                }[s.mode]
+                if s.position == 1 and s.status == SubmitStatus.BEST:
+                    modes = {
+                        0: "osu!",
+                        1: "osu!taiko",
+                        2: "osu!catch",
+                        3: "osu!mania"
+                    }[s.mode]
 
-                await glob.channels.message(
-                    await glob.players.get_user_by_id(1), 
-                    f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]",
-                    "#announce"
+                    await glob.channels.message(
+                        await glob.players.get_user(1), 
+                        f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]",
+                        "#announce"
+                    )
+
+                await glob.sql.execute(
+                    "UPDATE beatmaps SET "
+                    "plays = %s, passes = %s "
+                    "WHERE hash = %s",
+                    (s.map.plays, s.map.passes, s.map.hash_md5)
                 )
+            else:
+                return Response("error: no")
+
+    if s.passed:
+        ret = []
+
+        ret.append("|".join((
+            f"beatmapId:{s.map.map_id}",
+            f"beatmapSetId:{s.map.set_id}",
+            f"beatmapPlaycount:{s.map.plays}",
+            f"beatmapPasscount:{s.map.passes}",
+            f"approvedDate:{s.map.approved_date}"
+        )))
+
+        ret.append("|".join((
+            "chartId:beatmap",
+            f"chartUrl:{s.map.url}",
+            "chartName:deez nuts",
+
+            *(
+                Beatmap.add_chart("rank", s.position),
+                Beatmap.add_chart("accuracy", s.accuracy),
+                Beatmap.add_chart("maxCombo", s.max_combo),
+                Beatmap.add_chart("rankedScore", s.score),
+                Beatmap.add_chart("totalScore", s.score),
+                Beatmap.add_chart("pp", math.ceil(s.pp))
+            ),
+
+            f"onlineScoreId:{s.id}"
+        )))
+
+        ret.append("|".join((
+            "chartId:overall",
+            f"chartUrl:{s.player.url}",
+            "chartName:penis",
+
+            *(
+                Beatmap.add_chart("rank", s.player.rank),
+                Beatmap.add_chart("accuracy", s.accuracy),
+                Beatmap.add_chart("maxCombo", 0),
+                Beatmap.add_chart("rankedScore", s.score),
+                Beatmap.add_chart("totalScore", s.score),
+                Beatmap.add_chart("pp", s.player.pp)
+            ),
+
+            # achievements can wait
+            f"achievements-new:osu-combo-500+deez+nuts"
+        )))
+    else:
+        return Response("error: no")
 
     await s.save_to_db()
 
-    if glob.debug:
-        log.debug(f"Submit handler took: {(time.time_ns() - start) / 1e6}ms")
-
-    return Response("error: ban")
+    return Response("\n".join(ret))
 
 @register_osu("osu-getreplay.php")
 @check_auth("u", "h")
@@ -280,4 +342,6 @@ async def get_replay(req: Request):
         return Response("")
 
 @register_osu("osu-comment", method="POST")
-async def get_beatmap_comments(req: Request): ...
+async def get_beatmap_comments(req: Request):
+    body = await req.form()
+    log.debug(body)

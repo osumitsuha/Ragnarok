@@ -65,7 +65,7 @@ class Channels:
             return # ignore if the user is restricted
         
         if not channel.startswith("#"):
-            u = await glob.players.get_user(channel) # channel is the users username in this instance
+            u = await glob.players.get_user(username=channel) # channel is the users username in this instance
 
             if not u:
                 return # user isn't online; prevents the server from crashing

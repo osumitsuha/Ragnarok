@@ -30,7 +30,7 @@ async def write_replay(replay, s = None, score_id = 0) -> None:
     r_hash = md5(
         f"{s.count_100 + s.count_300}o{s.count_50}o{s.count_geki}o"
         f"{s.count_katu}t{s.count_miss}a{s.map.hash_md5}r{s.max_combo}e"
-        f"{bool(s.perfect)}y{s.player.username}o{s.score}u{s.position}{s.mods}True"
+        f"{bool(s.perfect)}y{s.player.username}o{s.score}u{s.rank}{s.mods}True"
         .encode()
     ).hexdigest()
 

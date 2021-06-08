@@ -34,6 +34,7 @@ class Beatmap:
         self.cs = 0.0
         self.mode = 0
         self.bpm = 0.0
+        self.max_combo = 0
 
         self.approved = Approved.PENDING
 
@@ -79,6 +80,10 @@ class Beatmap:
     @property
     def web_format(self):
         return f"{self.approved}|false|{self.map_id}|{self.set_id}|{len(self.scores)}\n0\n{self.display_title}\n{self.rating}"
+
+    @staticmethod
+    def add_chart(name: str, value) -> str:
+        return f"{name}Before:|{name}After:{value}"
 
     @classmethod
     async def _get_beatmap_from_sql(cls, hash: str):
@@ -136,9 +141,9 @@ class Beatmap:
         await glob.sql.execute(
             "INSERT INTO beatmaps (set_id, map_id, hash, title, title_unicode, "
             "version, artist, artist_unicode, creator, creator_id, stars, "
-            "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
+            "od, ar, hp, cs, mode, bpm, max_combo, approved, submit_date, approved_date, "
             "latest_update, length, drain, plays, passes, favorites, rating) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
             "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             [*self.__dict__.values()][:-1]
         )
@@ -179,6 +184,7 @@ class Beatmap:
         b.cs = float(ret["diff_size"])
         b.mode = int(ret["mode"])
         b.bpm = float(ret["bpm"])
+        b.max_combo = int(ret["max_combo"])
 
         b.approved = int(ret["approved"])
 
