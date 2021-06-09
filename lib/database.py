@@ -29,9 +29,12 @@ class Database:
                 await cur.execute(query, params)
                 return await cur.fetchall()
 
-    async def fetch(self, query: str, params: Optional[list[Any]] = None) -> dict[str, Any]:
+    async def fetch(self, query: str, params: Optional[list[Any]] = None, _dict: bool = True) -> dict[str, Any]:
+        if _dict: cursor = aiomysql.DictCursor 
+        else: cursor = aiomysql.Cursor
+
         async with self.pool.acquire() as conn:
-            async with conn.cursor(aiomysql.DictCursor) as cur:
+            async with conn.cursor(cursor) as cur:
                 await cur.execute(query, params)
                 return await cur.fetchone()
 

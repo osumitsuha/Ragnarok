@@ -2,6 +2,7 @@ from enum import IntEnum
 import aiohttp
 from objects import glob
 from utils import log
+from constants.playmode import Mode
 
 class Approved(IntEnum):
     GRAVEYARD = -2
@@ -51,7 +52,7 @@ class Beatmap:
 
         self.rating = 0 # added
 
-        self.scores = [] # implementing in 300000 years 
+        self.scores: int = 0 # implementing in 300000 years 
 
     @property
     def file(self):
@@ -79,11 +80,11 @@ class Beatmap:
 
     @property
     def web_format(self):
-        return f"{self.approved}|false|{self.map_id}|{self.set_id}|{len(self.scores)}\n0\n{self.display_title}\n{self.rating}"
+        return f"{self.approved}|false|{self.map_id}|{self.set_id}|{self.scores}\n0\n{self.display_title}\n{self.rating}"
 
     @staticmethod
-    def add_chart(name: str, value) -> str:
-        return f"{name}Before:|{name}After:{value}"
+    def add_chart(name: str, prev = None, after = None) -> str:
+        return f"{name}Before:{prev if prev else ''}|{name}After:{after}"
 
     @classmethod
     async def _get_beatmap_from_sql(cls, hash: str):
@@ -151,7 +152,7 @@ class Beatmap:
         log.info(f"Saved {self.full_title} ({self.hash_md5}) into database")
 
     @classmethod
-    async def _get_beatmap_from_osuapi(cls, hash: str):
+    async def _get_beatmap_from_osuapi(cls, hash: str, beatmap_id: int):
         b = cls()
 
         async with aiohttp.ClientSession() as session:
@@ -161,7 +162,9 @@ class Beatmap:
                     return
 
                 if not (b_data := await resp.json()):
-                    return
+                    async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&s="+beatmap_id+"&a=1") as penis:
+                        if not (b_data := await penis.json()):
+                            return
 
                 ret = b_data[0]
 
@@ -182,11 +185,11 @@ class Beatmap:
         b.ar = float(ret["diff_approach"])
         b.hp = float(ret["diff_drain"])
         b.cs = float(ret["diff_size"])
-        b.mode = int(ret["mode"])
+        b.mode = Mode(int(ret["mode"])).value
         b.bpm = float(ret["bpm"])
         b.max_combo = int(ret["max_combo"])
 
-        b.approved = int(ret["approved"])
+        b.approved = Approved(int(ret["approved"])).value
 
         b.submit_date = ret["submit_date"]
         
@@ -211,11 +214,11 @@ class Beatmap:
         return b
 
     @classmethod
-    async def get_beatmap(cls, hash: str):
+    async def get_beatmap(cls, hash: str, beatmap_id = 0):
         self = cls() #trollface
 
         if not (ret := await self._get_beatmap_from_sql(hash)):
-            if not (ret := await self._get_beatmap_from_osuapi(hash)):
+            if not (ret := await self._get_beatmap_from_osuapi(hash, beatmap_id)):
                 return
 
         return ret

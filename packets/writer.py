@@ -1,9 +1,8 @@
-from typing import Any, Union
+from typing import Any
 from enum import unique, IntEnum
 from objects import glob
-from utils import log
 from constants.packets import BanchoPackets
-from functools import cache
+import math
 import struct
 
 spec = (
@@ -214,8 +213,6 @@ async def UpdateStats(p):
     if p.bot:
         return b""
 
-    await p.update_stats()
-
     return await write(
         BanchoPackets.CHO_USER_STATS,
         (p.id, Types.int32),
@@ -230,7 +227,7 @@ async def UpdateStats(p):
         (p.playcount, Types.int32),
         (p.total_score, Types.int64),
         (p.rank, Types.int32),
-        (p.pp, Types.int16)
+        (math.ceil(p.pp), Types.int16)
     )
 
 async def UserPresence(p):

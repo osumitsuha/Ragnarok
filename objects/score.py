@@ -265,15 +265,6 @@ class Score:
         self.accuracy = acc * 100
 
     async def save_to_db(self):
-        # get old personal best,
-        # if there is one.
-        if self.passed and self.pb:
-            if [self.pb.web_format, self.pb.mode, self.pb.relax] in self.map.scores:
-                if glob.debug:
-                    log.debug("Removing a players old personal best from cache.")
-
-                self.map.scores.remove([self.pb.web_format, self.pb.mode, self.pb.relax])
-
         await glob.sql.execute(
             "INSERT INTO scores (hash_md5, user_id, score, pp, "
             "count_300, count_100, count_50, count_geki, "

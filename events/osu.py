@@ -8,11 +8,14 @@ from decorators import register_osu, register
 from objects.score import Score, SubmitStatus
 from typing import Callable
 from functools import wraps
+import numpy as np
 import aiofiles
 import aiohttp
+import asyncio
 import time
 import math
 import os
+import copy
 
 def check_auth(u: str, pw: str):
     def decorator(cb: Callable) -> Callable:
@@ -50,6 +53,22 @@ async def handle_osu(req: Request):
     
         log.error(f"[{req.method}] /web/{req.path_params['url']} - {round((time.time_ns() - start) / 1e6, 2)}ms")
         return Response("")
+
+async def get_beatmap_file(id: int):
+    if not os.path.exists(f".data/beatmaps/{id}.osu"):
+        async with aiohttp.ClientSession() as sess:
+            # I hope this is legal.
+            async with sess.get(
+                    f"https://osu.ppy.sh/web/osu-getosufile.php?q={id}", 
+                    headers={"user-agent": "osu!"}
+                ) as resp:
+
+                if not await resp.text():
+                    log.error(f"Couldn't fetch the .osu file of {id}. Maybe because api rate limit?")
+                    return Response("")
+
+                async with aiofiles.open(f".data/beatmaps/{id}.osu", "w+") as osu:
+                    await osu.write(await resp.text())
 
 @register_osu("osu-osz2-getscores.php")
 @check_auth("us", "ha")
@@ -94,10 +113,9 @@ async def get_scores(req: Request):
     """
     hash = req.query_params["c"]
     mode = int(req.query_params["m"])
-    # beatmap_id = req.query_params["i"]
 
     if not hash in glob.beatmaps:
-        b = await Beatmap.get_beatmap(hash)
+        b = await Beatmap.get_beatmap(hash, req.query_params["i"])
     else:
         b = glob.beatmaps[hash]
 
@@ -107,7 +125,8 @@ async def get_scores(req: Request):
     if b.approved <= 0:
         return Response("0|false")
 
-    b.approved += 1
+    if not hash in glob.beatmaps:
+        b.approved += 1
 
     p = await glob.players.get_user(req.query_params["us"])
 
@@ -144,55 +163,21 @@ async def get_scores(req: Request):
         # be working on this another time, but
         # it still works
 
-        # any() with b.scores doesn't work.
-        # its annoying.
-        missing_mode = False
-        missing_relax = False
+        async for play in glob.sql.iterall(
+            "SELECT s.id FROM scores s INNER JOIN users u ON u.id = s.user_id "
+            "WHERE s.hash_md5 = %s AND s.mode = %s AND s.relax = %s AND s.status = 3 "
+            f"AND u.privileges & 4 ORDER BY s.{order} DESC, s.submitted ASC LIMIT 50",
+            (b.hash_md5, mode, p.relax)
+        ):
+            ls = await Score.set_data_from_sql(play["id"])
 
-        for score in b.scores:
-            if score[1] != mode:
-                missing_mode = True
+            await ls.calculate_position() 
 
-            if score[2] != int(p.relax):
-                missing_relax = True
+            ls.map.scores += 1
 
-        if len(b.scores) == 0:
-            missing_mode = True
+            ret += ls.web_format
 
-        if missing_mode or missing_relax:
-            if glob.debug:
-                log.debug(f"Caching scores for [mode: {mode} | relax: {p.relax}] for {b.full_title}")
-
-            # I'm not sure, if this is how 
-            # I will be handling leaderboards 
-            # since I feel like it looks weird,
-
-            async for play in glob.sql.iterall(
-                "SELECT id FROM scores WHERE hash_md5 = %s "
-                "AND mode = %s AND relax = %s AND status = 3 "
-                f"ORDER BY {order} DESC, submitted ASC LIMIT 50",
-                (b.hash_md5, mode, p.relax)
-            ):
-                
-                ls = await Score.set_data_from_sql(play["id"])
-
-                await ls.calculate_position() 
-
-                # {0} is the web format for the score
-                # {1} is the mode of the play
-                # {2} is the indicator that the play is either relax or not.
-                b.scores.append([ls.web_format, mode, ls.relax])
-
-    # fetched leaderboards
-    fl = (x[0] for x in b.scores if x[1] == mode and x[2] == p.relax)
-
-    ret += "".join(fl)
-
-    if not os.path.exists(f".data/beatmaps/{b.file}"):
-        async with aiohttp.ClientSession() as sess:
-            async with sess.get(f"https://old.ppy.sh/osu/{b.map_id}") as resp:
-                async with aiofiles.open(f".data/beatmaps/{b.file}", "w+") as osu:
-                    await osu.write(await resp.text())
+    asyncio.create_task(get_beatmap_file(b.map_id))
 
     if not hash in glob.beatmaps:
         glob.beatmaps[hash] = b
@@ -222,11 +207,16 @@ async def score_submission(req: Request):
     if not s.map:
         return Response("error: beatmap")
 
-    leaderboard = []
+    if not s.passed:
+        ret = "error: no"
+
 
     # i hate this
     s.id = await glob.sql.fetch("SELECT id FROM scores ORDER BY id DESC LIMIT 1") 
-    s.id = s.id["id"] + 1
+    if not s.id:
+        s.id = 1
+    else:
+        s.id = s.id["id"] + 1
 
     s.play_time = body["st" if s.passed else "ft"]
 
@@ -248,16 +238,65 @@ async def score_submission(req: Request):
                 async with aiofiles.open(f".data/replays/{s.id}.osr", "wb+") as file:
                     await file.write(await body["score"].read())
 
-                # Leaderboard cache handling
-                for position in s.map.scores:
-                    if (position[1] == s.mode and position[2] == s.relax):
-                        leaderboard.append(position[0])
+                await glob.sql.execute(
+                    "UPDATE beatmaps SET "
+                    "plays = %s, passes = %s "
+                    "WHERE hash = %s",
+                    (s.map.plays, s.map.passes, s.map.hash_md5)
+                )
 
-                # TODO: top 50 handling
+    await s.save_to_db()
 
-                leaderboard.append([s.web_format, s.mode, s.relax])
+    if s.passed:
+        stats = s.player
 
-                if s.position == 1 and s.status == SubmitStatus.BEST:
+        # check if the user is playing for the first time
+        prev_stats = None
+
+        if stats.total_score > 0:
+            prev_stats = copy.copy(stats) 
+
+        # calculate new stats
+        if s.map.approved >= 1:
+
+            stats.playcount += 1
+            stats.total_score += s.score
+
+            if s.status == SubmitStatus.BEST:
+                table = ("stats", "stats_rx")[s.relax]
+
+                rank = await glob.sql.fetch(
+                        f"SELECT COUNT(*) AS rank FROM {table} t "
+                        "INNER JOIN users u ON u.id = t.id "
+                        "WHERE t.id != %s AND t.pp_std > %s "
+                        "ORDER BY t.pp_std DESC, t.total_score_std DESC LIMIT 1",
+                        (stats.id, stats.pp)
+                    )
+
+                stats.rank = rank["rank"] + 1
+                
+                sus = s.score
+
+                if s.pb:
+                    sus -= s.pb.score
+
+                stats.ranked_score += sus
+
+                scores = await glob.sql.fetchall(
+                    "SELECT pp, accuracy FROM scores "
+                    "WHERE user_id = %s AND mode = %s "
+                    "AND status = 3", (stats.id, s.mode.value)
+                )
+
+                avg_accuracy = np.array([x[1] for x in scores])
+
+                stats.accuracy = float(np.mean(avg_accuracy))
+
+                weighted = np.sum([score[0] * 0.95 ** (place - 1) for place, score in enumerate(scores)])
+                weighted += 416.6667 * (1 - 0.9994 ** len(scores))
+                stats.pp = math.ceil(weighted)
+
+                if s.position == 1 and not stats.is_restricted:
                     modes = {
                         0: "osu!",
                         1: "osu!taiko",
@@ -271,16 +310,6 @@ async def score_submission(req: Request):
                         "#announce"
                     )
 
-                await glob.sql.execute(
-                    "UPDATE beatmaps SET "
-                    "plays = %s, passes = %s "
-                    "WHERE hash = %s",
-                    (s.map.plays, s.map.passes, s.map.hash_md5)
-                )
-            else:
-                return Response("error: no")
-
-    if s.passed:
         ret = []
 
         ret.append("|".join((
@@ -296,14 +325,21 @@ async def score_submission(req: Request):
             f"chartUrl:{s.map.url}",
             "chartName:deez nuts",
 
-            *(
-                Beatmap.add_chart("rank", s.position),
-                Beatmap.add_chart("accuracy", s.accuracy),
-                Beatmap.add_chart("maxCombo", s.max_combo),
-                Beatmap.add_chart("rankedScore", s.score),
-                Beatmap.add_chart("totalScore", s.score),
-                Beatmap.add_chart("pp", math.ceil(s.pp))
-            ),
+            *((
+                Beatmap.add_chart("rank", None, s.position),
+                Beatmap.add_chart("accuracy", None, s.accuracy),
+                Beatmap.add_chart("maxCombo", None, s.max_combo),
+                Beatmap.add_chart("rankedScore", None, s.score),
+                Beatmap.add_chart("totalScore", None, s.score),
+                Beatmap.add_chart("pp", None, math.ceil(s.pp))
+            ) if not s.pb else (
+                Beatmap.add_chart("rank", s.pb.position, s.position),
+                Beatmap.add_chart("accuracy", s.pb.accuracy, s.accuracy),
+                Beatmap.add_chart("maxCombo", s.pb.max_combo, s.max_combo),
+                Beatmap.add_chart("rankedScore", s.pb.score, s.score),
+                Beatmap.add_chart("totalScore", s.pb.score, s.score),
+                Beatmap.add_chart("pp", math.ceil(s.pb.pp), math.ceil(s.pp))
+            )),
 
             f"onlineScoreId:{s.id}"
         )))
@@ -313,14 +349,21 @@ async def score_submission(req: Request):
             f"chartUrl:{s.player.url}",
             "chartName:penis",
 
-            *(
-                Beatmap.add_chart("rank", s.player.rank),
-                Beatmap.add_chart("accuracy", s.accuracy),
-                Beatmap.add_chart("maxCombo", 0),
-                Beatmap.add_chart("rankedScore", s.score),
-                Beatmap.add_chart("totalScore", s.score),
-                Beatmap.add_chart("pp", s.player.pp)
-            ),
+            *((
+                Beatmap.add_chart("rank", None, stats.rank),
+                Beatmap.add_chart("accuracy", None, stats.accuracy),
+                Beatmap.add_chart("maxCombo", None, 0),
+                Beatmap.add_chart("rankedScore", None, stats.ranked_score),
+                Beatmap.add_chart("totalScore", None, stats.total_score),
+                Beatmap.add_chart("pp", None, stats.pp)
+            ) if not prev_stats else (
+                Beatmap.add_chart("rank", prev_stats.rank, stats.rank),
+                Beatmap.add_chart("accuracy", prev_stats.accuracy, stats.accuracy),
+                Beatmap.add_chart("maxCombo", 0, 0),
+                Beatmap.add_chart("rankedScore", prev_stats.ranked_score, stats.ranked_score),
+                Beatmap.add_chart("totalScore", prev_stats.total_score, stats.total_score),
+                Beatmap.add_chart("pp", prev_stats.pp, stats.pp)
+            )),
 
             # achievements can wait
             f"achievements-new:osu-combo-500+deez+nuts"
@@ -328,7 +371,6 @@ async def score_submission(req: Request):
     else:
         return Response("error: no")
 
-    await s.save_to_db()
 
     return Response("\n".join(ret))
 
