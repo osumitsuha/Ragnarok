@@ -5,13 +5,12 @@ from lib.database import Database
 from objects.bot import Louise
 from objects import glob
 from utils import log
-import os
+import os, sys
 
 async def startup():
     print(f"\033[94m{glob.title_card}")
 
-    for _path in (".data/avatars", ".data/replays", 
-                  ".data/beatmaps", ".data/storyboards"):
+    for _path in (".data/avatars", ".data/replays", ".data/beatmaps"):
         if not os.path.exists(_path):
             log.warning(f"You're missing the folder {_path}! Don't worry we'll add it for you!")
 
@@ -27,7 +26,7 @@ async def startup():
     log.info("... Connecting Louise to the server")
     if not await Louise.init():
         log.error("✗ Couldn't find Louise in the database.")
-        os.exit(1)
+        sys.exit()
         
     log.info("✓ Successfully connected Louise!")
 

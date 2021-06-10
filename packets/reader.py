@@ -108,10 +108,15 @@ class Reader:
         return ret[0]
 
     def read_i32_list(self) -> tuple[int]:
-        length = self.read_short() #i16
+        length = self.read_short()
 
         ret = struct.unpack(f"<{'I' * length[0]}", self.packet_data[self.offset:self.offset+length[0]*4]) #i32
         self.offset += length[0] * 4
+        return ret
+
+    def read_short(self):
+        ret = struct.unpack("<h", self.packet_data[self.offset:self.offset+2])
+        self.offset += 2
         return ret
 
     def read_float32(self) -> float:
@@ -122,11 +127,6 @@ class Reader:
     def read_float64(self) -> float:
         ret = struct.unpack('<d', self.packet_data[self.offset:self.offset+8])
         self.offset += 8
-        return ret
-
-    def read_short(self):
-        ret = struct.unpack("<h", self.packet_data[self.offset:self.offset+2])
-        self.offset += 2
         return ret
 
     def get_packet_length_und_id(self):
@@ -169,5 +169,3 @@ class Reader:
         ret = self.packet_data[self.offset:self.offset+self.length]
         self.offset += self.length
         return ret
-
-    # TODO: write replayframes and replayframesbundle reader

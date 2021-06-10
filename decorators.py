@@ -1,8 +1,6 @@
 from starlette.routing import Route
-from starlette.responses import Response
 from constants.packets import BanchoPackets
 from typing import Callable
-from functools import wraps
 from objects import glob
 
 def register(uri: str, methods: list = ["GET"]) -> Callable:
