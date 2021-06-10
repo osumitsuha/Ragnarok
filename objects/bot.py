@@ -22,6 +22,8 @@ class Louise:
 
         p.bot = True
 
+        glob.bot = p
+
         await glob.players.add_user(p)
 
         for player in glob.players.players:

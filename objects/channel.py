@@ -68,7 +68,7 @@ class Channels:
             u = await glob.players.get_user(channel) # channel is the users username in this instance
 
             if not u:
-                p.enqueue(await writer.SendMessage("Louise", "The player you're trying to contact, is currently offline.", channel))
+                p.enqueue(await writer.SendMessage(glob.bot.username, "The player you're trying to contact, is currently offline.", channel))
                 return # user isn't online; prevents the server from crashing
 
             u.enqueue(await writer.SendMessage(p.username, msg, channel))
@@ -100,4 +100,4 @@ class Channels:
 
                     resp = await cmd["trigger"](p, channel, msg)
 
-                    glob.players.enqueue(await writer.SendMessage("Louise", resp, channel))
+                    glob.players.enqueue(await writer.SendMessage(glob.bot.username, resp, channel))

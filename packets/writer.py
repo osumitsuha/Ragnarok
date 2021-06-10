@@ -2,6 +2,8 @@ from typing import Any
 from enum import unique, IntEnum
 from objects import glob
 from constants.packets import BanchoPackets
+from constants.osu_ranks import Ranks
+from constants.privileges import Privileges
 import math
 import struct
 
@@ -166,7 +168,27 @@ async def Notification(msg: str) -> bytes:
         (msg, Types.string)
     )
 
-async def UserPriv(rank: int) -> bytes:
+async def UserPriv(privileges: int) -> bytes:
+    rank = Ranks.NONE
+
+    if privileges & Privileges.VERIFIED:
+        rank |= Ranks.NORMAL
+
+    if privileges & Privileges.BAT:
+        rank |= Ranks.BAT
+    
+    if privileges & Privileges.SUPPORTER:
+        rank |= Ranks.SUPPORTER
+        
+    if privileges & Privileges.MODERATOR:
+        rank |= Ranks.FRIEND
+
+    if privileges & Privileges.ADMIN:
+        rank |= Ranks.FRIEND
+
+    if privileges & Privileges.DEV:
+        rank |= Ranks.PEPPY
+
     return await write(
         BanchoPackets.CHO_PRIVILEGES,
         (rank, Types.int32)
@@ -208,9 +230,6 @@ async def UpdateFriends(friends_id: tuple[int]):
 
 async def UpdateStats(p):
     if p not in glob.players.players:
-        return b""
-
-    if p.bot:
         return b""
 
     return await write(

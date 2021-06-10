@@ -17,12 +17,17 @@ import math
 import os
 import copy
 
-def check_auth(u: str, pw: str):
+def check_auth(u: str, pw: str, method="GET"):
     def decorator(cb: Callable) -> Callable:
         @wraps(cb)
         async def wrapper(req, *args, **kwargs):
-            player = req.query_params[u]
-            password = req.query_params[pw]
+            if method == "GET":
+                player = req.query_params[u]
+                password = req.query_params[pw]
+            else:
+                body = await req.form()
+                player = body[u]
+                password = body[pw]
 
             if not (p := await glob.players.get_user(player)):
                 return Response("")
@@ -383,7 +388,13 @@ async def get_replay(req: Request):
 
         return Response("")
 
-@register_osu("osu-comment", method="POST")
+@register_osu("osu-comment.php", method="POST")
+@check_auth("u", "p", method="POST")
 async def get_beatmap_comments(req: Request):
     body = await req.form()
-    log.debug(body)
+
+    if not body:
+        return Response("")
+
+    log.info(body)
+    return Response("")

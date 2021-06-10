@@ -83,28 +83,34 @@ async def unrestrict_user(p, chan, message):
 
     return f"Successfully unrestricted {t.username}"
 
-@register_command("louise")
-async def louise_commands(p, chan, message):
-    # usage: !louise <action>
+@register_command("bot")
+async def bot_commands(p, chan, message):
+    # usage: !bot <action>
 
     args = message.split(" ")[1:]
 
     if len(args) < 1:
-        return "louise."
+        return f"{glob.bot.username.lower()}."
 
     if args[0] == "reconnect":
         if await glob.players.get_user(1):
-            return "Louise is already connected."
+            return f"{glob.bot.username} is already connected."
 
         await Louise.init()
 
-        return "Successfully connected Louise."
+        return f"Successfully connected {glob.bot.username}."
 
 @register_command("roll")
 async def roll(p, chan, message):
     # usage: !roll
 
-    return f"{p.username} rolled {random.randint(0, 100)} point(s)"
+    x = 100
+    args = message.split(" ")
+
+    if len(args) > 1:
+        x = int(args[1])
+
+    return f"{p.username} rolled {random.randint(0, x)} point(s)"
 
 @register_command("stats")
 async def user_stats(p, chan, message):

@@ -139,6 +139,9 @@ class Beatmap:
         return b
 
     async def add_to_db(self):
+        if await glob.sql.fetch("SELECT 1 FROM beatmaps WHERE hash = %s LIMIT 1", (self.hash_md5)):
+            return # ignore beatmaps there are already in db
+
         await glob.sql.execute(
             "INSERT INTO beatmaps (set_id, map_id, hash, title, title_unicode, "
             "version, artist, artist_unicode, creator, creator_id, stars, "
@@ -152,7 +155,7 @@ class Beatmap:
         log.info(f"Saved {self.full_title} ({self.hash_md5}) into database")
 
     @classmethod
-    async def _get_beatmap_from_osuapi(cls, hash: str, beatmap_id: int):
+    async def _get_beatmap_from_osuapi(cls, hash: str):
         b = cls()
 
         async with aiohttp.ClientSession() as session:
@@ -162,9 +165,7 @@ class Beatmap:
                     return
 
                 if not (b_data := await resp.json()):
-                    async with session.get("https://osu.ppy.sh/api/get_beatmaps?k="+glob.osu_key+"&s="+beatmap_id+"&a=1") as penis:
-                        if not (b_data := await penis.json()):
-                            return
+                    return
 
                 ret = b_data[0]
 
@@ -218,7 +219,7 @@ class Beatmap:
         self = cls() #trollface
 
         if not (ret := await self._get_beatmap_from_sql(hash)):
-            if not (ret := await self._get_beatmap_from_osuapi(hash, beatmap_id)):
+            if not (ret := await self._get_beatmap_from_osuapi(hash)):
                 return
 
         return ret

@@ -8,6 +8,8 @@ registered_packets: list = []
 registered_osu_routes: list = []
 registered_commands: list = []
 
+bot = None
+
 prefix: str = "!"
 
 config: dict = config
