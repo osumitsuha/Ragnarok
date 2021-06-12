@@ -430,7 +430,9 @@ async def request_stats(p: Player, packet):
             return
 
         u = await glob.players.get_user(user)
-
+        if u.bot:
+            log.debug("Bot stats won't update")
+            return
         u.enqueue(await writer.UpdateStats(u))
 
 # id: 97
@@ -449,7 +451,9 @@ async def request_stats(p: Player, packet):
             return
 
         u = await glob.players.get_user(user)
-
+        if u.bot:
+            log.debug("Bot presence won't update")
+            return
         u.enqueue(await writer.UserPresence(u))
 
 # id: 98
