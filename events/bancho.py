@@ -3,6 +3,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse
 from decorators import register, register_event
 from constants.mods import Mods
+from constants.slots import SlotStatus, SlotTeams
 from utils import log
 from constants.privileges import Privileges
 from utils import log
@@ -327,6 +328,7 @@ async def lobby_join(p: Player, packet):
 # id: 31
 @register_event(BanchoPackets.OSU_CREATE_MATCH)
 async def create_match(p: Player, packet):
+    # Match Data
     struct = [
         ("id", writer.Types.int16),
         ("inprogress", writer.Types.int8), #bool
@@ -343,20 +345,19 @@ async def create_match(p: Player, packet):
     for i in range(0,16):
         struct.append(["slot_{}_status".format(str(i)), writer.Types.byte])
 
-    # Teams, check if slot is for red or blu team
+    # Teams, check if slot is for none, red or blue team
     for i in range(0,16):
         struct.append(["slot_{}_team".format(str(i)), writer.Types.byte])
 
-    # I know, I'm so DUMB.
     temp_data = reader.read_packet(packet, (struct))
 
     # Occupied slot, check if all 16 slots has user inside the slot
     for i in range(0,16):
         s = temp_data["slot_{}_status".format(str(i))]
-        if s & 124:
+        if s & SlotStatus.Occupied:
             struct.append(["slot_{}_user".format(str(i)), writer.Types.int32])
 
-    # more info
+    # Match Information
     struct += [
         ("host", writer.Types.int32),
         ("mode", writer.Types.byte),
