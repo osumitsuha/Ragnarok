@@ -327,8 +327,6 @@ async def lobby_join(p: Player, packet):
 # id: 31
 @register_event(BanchoPackets.OSU_CREATE_MATCH)
 async def create_match(p: Player, packet):
-    data = []
-    temp_data = []
     struct = [
         ("id", writer.Types.int16),
         ("inprogress", writer.Types.int8), #bool
@@ -341,18 +339,22 @@ async def create_match(p: Player, packet):
         ("bm_h", writer.Types.string),
     ]
 
+    # Status, check if locked, unlocked
     for i in range(0,16):
-        struct.append(["slot_{}_status".format(str(i)), writer.Types.byte]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+        struct.append(["slot_{}_status".format(str(i)), writer.Types.byte])
 
+    # Teams, check if slot is for red or blu team
     for i in range(0,16):
-        struct.append(["slot_{}_team".format(str(i)), writer.Types.byte]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+        struct.append(["slot_{}_team".format(str(i)), writer.Types.byte])
 
-    temp_data.append(reader.read_packet(packet, (struct)))
+    # I know, I'm so DUMB.
+    temp_data = reader.read_packet(packet, (struct))
 
+    # Occupied slot, check if all 16 slots has user inside the slot
     for i in range(0,16):
-        s = temp_data[0]["slot_{}_status".format(str(i))]
+        s = temp_data["slot_{}_status".format(str(i))]
         if s & 124:
-            struct.append(["slot_{}_user".format(str(i)), writer.Types.int32]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+            struct.append(["slot_{}_user".format(str(i)), writer.Types.int32])
 
     # more info
     struct += [
@@ -364,7 +366,7 @@ async def create_match(p: Player, packet):
         ("seed", writer.Types.int32) #mania map seed
     ]
 
-    data.append(reader.read_packet(packet, (struct)))
+    data = reader.read_packet(packet, (struct))
     log.debug(data)
 
 # id: 63
