@@ -83,7 +83,7 @@ class Reader:
         return ret[0]
 
     def read_int64(self):
-        ret = struct.unpack("<i", self.packet_data[self.offset:self.offset+8])
+        ret = struct.unpack("<q", self.packet_data[self.offset:self.offset+8])
         self.offset += 8
         return ret[0]
 
@@ -103,7 +103,7 @@ class Reader:
         return ret[0]
 
     def read_uint64(self):
-        ret = struct.unpack("<I", self.packet_data[self.offset:self.offset+8])
+        ret = struct.unpack("<Q", self.packet_data[self.offset:self.offset+8])
         self.offset += 8
         return ret[0]
 
