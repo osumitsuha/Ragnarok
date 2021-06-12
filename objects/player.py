@@ -3,6 +3,7 @@ from constants.privileges import Privileges
 from constants.presence import PresenceFilter
 from constants.mods import Mods
 from constants.playmode import Mode
+from objects.match import Match
 from utils import log
 from objects import glob
 from packets import writer
@@ -43,7 +44,7 @@ class Player:
         self.channels: list = []
         self.spectators: list[Player] = []
         self.spectating: Player = None
-        self.match = None
+        self.match: Match = None
 
         # Never played
         self.ranked_score: int = 0

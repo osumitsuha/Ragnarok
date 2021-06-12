@@ -309,6 +309,64 @@ async def send_public_message(p: Player, packet):
 
     await glob.channels.message(p, data["message"], data["user"])
 
+# id: 29
+@register_event(BanchoPackets.OSU_PART_LOBBY)
+async def lobby_part(p: Player, packet):
+    log.debug("Player left de_lobby")
+    #p.match.empty()
+
+# id: 30
+@register_event(BanchoPackets.OSU_JOIN_LOBBY)
+async def lobby_join(p: Player, packet):
+    log.debug("Player joined de_lobby")
+    """
+    for matches in glob.matches:
+        ...
+    """
+
+# id: 31
+@register_event(BanchoPackets.OSU_CREATE_MATCH)
+async def create_match(p: Player, packet):
+    data = []
+    temp_data = []
+    struct = [
+        ("id", writer.Types.int16),
+        ("inprogress", writer.Types.int8), #bool
+        ("type", writer.Types.byte),
+        ("mods", writer.Types.uint32),
+        ("name", writer.Types.string),
+        ("pass", writer.Types.string),
+        ("bm_n", writer.Types.string),
+        ("bm_i", writer.Types.int32),
+        ("bm_h", writer.Types.string),
+    ]
+
+    for i in range(0,16):
+        struct.append(["slot_{}_status".format(str(i)), writer.Types.byte]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+
+    for i in range(0,16):
+        struct.append(["slot_{}_team".format(str(i)), writer.Types.byte]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+
+    temp_data.append(reader.read_packet(packet, (struct)))
+
+    for i in range(0,16):
+        s = temp_data[0]["slot_{}_status".format(str(i))]
+        if s & 124:
+            struct.append(["slot_{}_user".format(str(i)), writer.Types.int32]) # there's many type of slot (status, team and player), i need to figure it out ~Aoba
+
+    # more info
+    struct += [
+        ("host", writer.Types.int32),
+        ("mode", writer.Types.byte),
+        ("score_type", writer.Types.byte),
+        ("team_type", writer.Types.byte),
+        ("special_mod", writer.Types.byte),
+        ("seed", writer.Types.int32) #mania map seed
+    ]
+
+    data.append(reader.read_packet(packet, (struct)))
+    log.debug(data)
+
 # id: 63
 @register_event(BanchoPackets.OSU_CHANNEL_JOIN, restricted=True)
 async def join_osu_channel(p: Player, packet):

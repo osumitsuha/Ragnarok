@@ -1,6 +1,7 @@
 from objects.player import Player
 from objects.tokens import Tokens
 from objects.channel import Channel, Channels
+from objects.match import Match, Matches
 from config import config
 
 registered_routes: list = []
@@ -36,6 +37,8 @@ debug: bool = config["debug"]
 players: list[Player] = Tokens()
 
 channels: list[Channel] = Channels()
+
+matches: list[Match] = Matches()
 
 osu_key: str = config["osu_api_key"]
 
