@@ -19,7 +19,7 @@ def read_packet(data: bytes, structure: tuple):
         elif type == Types.int16:
             ret = reader.read_int16()
         elif type == Types.uint16:
-            ret = reader.read_int16()
+            ret = reader.read_uint16()
         elif type == Types.int32:
             ret = reader.read_int32()
         elif type == Types.uint32:
@@ -68,12 +68,12 @@ class Reader:
         return ret[0]
 
     def read_int8(self):
-        ret = struct.unpack("<i", self.packet_data[self.offset:self.offset+1])
+        ret = self.packet_data[self.offset:self.offset+1]
         self.offset += 1
-        return ret[0]
+        return ret[0] - 256 if ret[0] > 127 else ret[0]
 
     def read_int16(self):
-        ret = struct.unpack("<i", self.packet_data[self.offset:self.offset+2])
+        ret = struct.unpack("<h", self.packet_data[self.offset:self.offset+2])
         self.offset += 2
         return ret[0]
 
@@ -86,14 +86,14 @@ class Reader:
         ret = struct.unpack("<i", self.packet_data[self.offset:self.offset+8])
         self.offset += 8
         return ret[0]
-    
+
     def read_uint8(self):
-        ret = struct.unpack("<I", self.packet_data[self.offset:self.offset+1])
+        ret = self.packet_data[self.offset:self.offset+1]
         self.offset += 1
         return ret[0]
 
     def read_uint16(self):
-        ret = struct.unpack("<I", self.packet_data[self.offset:self.offset+2])
+        ret = struct.unpack("<H", self.packet_data[self.offset:self.offset+2])
         self.offset += 2
         return ret[0]
 
@@ -108,15 +108,10 @@ class Reader:
         return ret[0]
 
     def read_i32_list(self) -> tuple[int]:
-        length = self.read_short()
+        length = self.read_int16()
 
-        ret = struct.unpack(f"<{'I' * length[0]}", self.packet_data[self.offset:self.offset+length[0]*4]) #i32
-        self.offset += length[0] * 4
-        return ret
-
-    def read_short(self):
-        ret = struct.unpack("<h", self.packet_data[self.offset:self.offset+2])
-        self.offset += 2
+        ret = struct.unpack(f"<{'I' * length}", self.packet_data[self.offset:self.offset+length*4]) #i32
+        self.offset += length * 4
         return ret
 
     def read_float32(self) -> float:
