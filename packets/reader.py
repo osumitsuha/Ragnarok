@@ -1,18 +1,24 @@
 from objects.score import ScoreFrame
 from constants.playmode import Mode
+from typing import AnyStr, Callable
+from dataclasses import dataclass
 from objects.match import Match
 from constants.mods import Mods
 from constants.match import *
-from typing import AnyStr
 from objects import glob
 import struct
 
+@dataclass
+class Packet:
+    callback: Callable
+    name: str
+    restricted: bool
 
 class Reader:
     def __init__(self, packet_data: bytes):
         self.packet_data = packet_data
         self.offset = 0
-        self.packet_id, self.length = self.get_packet_length_und_id()
+        self.pid, self.plen = self.get_packet_length_und_id()
 
     @property
     def data(self):
@@ -121,8 +127,8 @@ class Reader:
         return ret
 
     def read_raw(self) -> AnyStr:
-        ret = self.data[:self.length]
-        self.offset += self.length
+        ret = self.data[:self.plen]
+        self.offset += self.plen
         return ret
 
     def read_match(self) -> Match:

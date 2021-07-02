@@ -1,14 +1,14 @@
 from constants.player import bStatus, Privileges
 from constants.packets import BanchoPackets
+from packets.reader import Reader, Packet
 from constants import commands as cmd
-from decorators import register_event
 from objects.beatmap import Beatmap
 from constants.playmode import Mode
 from lenhttp import Router, Request
-from packets.reader import Reader
 from objects.player import Player
 from constants.mods import Mods
 from constants.match import *
+from typing import Callable
 from packets import writer
 from utils import general
 from objects import glob
@@ -22,6 +22,16 @@ import time
 import copy
 import re
 
+def register_event(packet: BanchoPackets, restricted: bool = False) -> Callable:
+    def decorator(cb: Callable) -> Callable:
+        glob.packets |= {packet.value: Packet(
+            callback=cb,
+            name=packet.name,
+            restricted=restricted
+        )}
+
+    return decorator
+
 glob.bancho = Router({re.compile(rf"^c[e4-6]?.mitsuha.pw$"), f"127.0.0.1:{glob.port}"})
 
 IGNORED_PACKETS: list[int] = [4, 79]
@@ -34,39 +44,36 @@ async def handle_bancho(req: Request):
     if not "osu-token" in req.headers:
         return await login(req)
 
-    packet = Reader(req.body)
-
     token = req.headers["osu-token"]
-    packet_id = struct.unpack_from("<H", packet.packet_data[:2])[0]
 
     if not (player := glob.players.get_user(token)):
         return await writer.Notification("Server has restarted") + await writer.ServerRestart()
 
-    if not any(h["packet"] == packet_id for h in glob.registered_packets):
-        if glob.debug:
-            log.warn(
-                f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username} but isn't a registered packet."
+    p = Reader(req.body)
+
+    if p.pid in glob.packets:
+        # ignore restricted user trying
+        # to do unrestricted packets
+        sr = glob.packets[p.pid]
+
+        if player.is_restricted and (not sr.restricted):
+            return b""
+
+        start = time.time_ns()
+
+        await sr.callback(player, p)
+
+        end = (time.time_ns() - start) / 1e6
+
+        if glob.debug and p.pid not in IGNORED_PACKETS:
+            log.debug(
+                f"Packet <{p.pid} | {sr.name}> has been requested by {player.username} - {round(end, 2)}ms"
             )
-
-        return b""
-
-    for handle in glob.registered_packets:
-        if packet_id == handle["packet"]:
-            # ignore restricted user trying
-            # to do unrestricted packets
-            if player.is_restricted and (not handle["restricted"]):
-                continue
-
-            start = time.time_ns()
-
-            await handle["func"](player, packet)
-
-            end = (time.time_ns() - start) / 1e6
-
-            if glob.debug and packet_id not in IGNORED_PACKETS:
-                log.debug(
-                    f"Packet <{packet_id} | {BanchoPackets(packet_id).name}> has been requested by {player.username} - {round(end, 2)}ms"
-                )
+    else:
+        if glob.debug and p.pid not in IGNORED_PACKETS:
+            log.debug(
+                f"Packet <{p.pid} | {BanchoPackets(p.pid).name}> has been requested by {player.username}, although it's an unregistered packet."
+            )
 
     req.add_header("Content-Type", "text/html; charset=UTF-8")
     player.last_update = time.time()

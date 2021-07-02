@@ -9,6 +9,8 @@ if TYPE_CHECKING:
     from constants.commands import Command
     from objects.beatmap import Beatmap
     from objects.player import Player
+    from packets.reader import Packet
+
 
 server: LenHTTP = None
 
@@ -20,8 +22,8 @@ bancho: Router = None
 avatar: Router = None
 osu: Router = None
 
-registered_packets: list[dict[str, Any]] = []
-registered_tasks: list[dict[str, Callable]] = []
+packets: dict[int, 'Packet'] = {}
+tasks: list[dict[str, Callable]] = []
 
 bot: 'Player' = None
 
