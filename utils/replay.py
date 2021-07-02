@@ -1,20 +1,26 @@
 from objects.player import Player
 from objects.score import Score
-from hashlib import md5
 from packets import writer
 from objects import glob
+from hashlib import md5
+import aiofiles
 import struct
 
-async def write_replay(replay, s = None, score_id = 0) -> None:
-    raw = await replay.read()
 
+async def write_replay(replay = None, s = None, score_id = 0, file_name = "") -> None:
+    if replay:
+        raw = await replay.read()
+    elif file_name:
+        async with aiofiles.open(file_name, "rb") as file:
+            raw = await file.read()
+        
     if score_id and not s:
         play = await glob.sql.fetch(
             "SELECT s.id, s.user_id, s.hash_md5, s.score, s.pp, s.count_300, "
             "s.count_50, s.count_geki, s.count_katu, s.count_miss, s.count_100, "
             "s.max_combo, s.accuracy, s.perfect, s.rank, s.mods, s.passed, "
             "s.exited, s.play_time, s.mode, s.submitted, s.relax FROM scores s "
-            "WHERE s.id = %s LIMIT 1"
+            "WHERE s.id = %s LIMIT 1",
             (score_id)
         )
 
@@ -58,8 +64,4 @@ async def write_replay(replay, s = None, score_id = 0) -> None:
     ret += struct.pack("<q", s.id)
 
     return ret
-
-# Maybe this will be useful in the future?
-# For an anticheat maybe?
-class ParseReplay:
-    def __init__(self, replay: bytes): ...
+    

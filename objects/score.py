@@ -1,23 +1,51 @@
 from py3rijndael.rijndael import RijndaelCbc
 from py3rijndael.paddings import ZeroPadding
-from constants.playmode import Mode
-from objects.player import Player
+from constants.beatmap import Approved
 from objects.beatmap import Beatmap
-from constants.mods import Mods
 from constants.playmode import Mode
+from constants.playmode import Mode
+from dataclasses import dataclass
+from objects.player import Player
+from constants.mods import Mods
 from base64 import b64decode
 from enum import IntEnum
 from objects import glob
-from utils import log
-from oppai import *
+from utils import score
+import oppai as pp
 import math
 import time
+
+@dataclass
+class ScoreFrame:
+    time: int = 0
+    id: int = 0
+    
+    count_300: int = 0
+    count_100: int = 0
+    count_50: int = 0
+    
+    count_geki: int = 0
+    count_katu: int = 0
+    count_miss: int = 0
+
+    score: int = 0
+    max_combo: int = 0
+    combo: int = 0
+
+    perfect: bool = False
+    
+    current_hp: int = 0
+    tag_byte: int = 0
+
+    score_v2: bool = False
+
 
 class SubmitStatus(IntEnum):
     FAILED = 0
     QUIT = 1
     PASSED = 2
     BEST = 3
+
 
 class Score:
     def __init__(self):
@@ -31,15 +59,15 @@ class Score:
 
         self.count_300: int = 0
         self.count_100: int = 0
-        self.count_50: int = 0 
+        self.count_50: int = 0
 
         self.count_geki: int = 0
         self.count_katu: int = 0
         self.count_miss: int = 0
-        
+
         self.max_combo: int = 0
         self.accuracy: float = 0.0
-        
+
         self.perfect: bool = False
 
         self.rank: str = ""
@@ -50,7 +78,7 @@ class Score:
         self.play_time: int = 0
 
         self.mode: Mode = Mode.OSU
-        
+
         self.submitted: int = math.ceil(time.time())
 
         self.relax: bool = False
@@ -60,12 +88,23 @@ class Score:
         # previous_best
         self.pb: Score = None
 
+
+        # THIS IS FOR SCOREFRAME - IGNORE.
+        self.time: int = 0
+        self.multi_id: int = 0
+        self.tag_byte: int = 0
+        self.current_hp: int = 0
+        self.combo: int = 0
+        self.score_v2: bool = False
+
     @property
     def web_format(self):
-        return f"\n{self.id}|{self.player.username}|{self.score if not self.relax else math.ceil(self.pp)}|" \
-               f"{self.max_combo}|{self.count_50}|{self.count_100}|{self.count_300}|{self.count_miss}|" \
-               f"{self.count_katu}|{self.count_geki}|{self.perfect}|{self.mods}|{self.player.id}|" \
-               f"{self.position}|{self.submitted}|1"
+        return (
+            f"\n{self.id}|{self.player.username}|{self.score if not self.relax else math.ceil(self.pp)}|"
+            f"{self.max_combo}|{self.count_50}|{self.count_100}|{self.count_300}|{self.count_miss}|"
+            f"{self.count_katu}|{self.count_geki}|{self.perfect}|{self.mods}|{self.player.id}|"
+            f"{self.position}|{self.submitted}|1"
+        )
 
     @classmethod
     async def set_data_from_sql(cls, score_id: int) -> None:
@@ -74,7 +113,8 @@ class Score:
             "count_50, count_geki, count_katu, count_miss, "
             "max_combo, accuracy, perfect, rank, mods, status, "
             "play_time, mode, submitted, relax FROM scores "
-            "WHERE id = %s", (score_id)
+            "WHERE id = %s",
+            (score_id),
         )
 
         s = cls()
@@ -94,12 +134,12 @@ class Score:
 
         s.max_combo = data["max_combo"]
         s.accuracy = data["accuracy"]
-        
+
         s.perfect = data["perfect"]
 
         s.rank = data["rank"]
         s.mods = data["mods"]
-        
+
         s.play_time = data["play_time"]
 
         s.status = SubmitStatus(data["status"])
@@ -110,15 +150,13 @@ class Score:
         s.relax = data["relax"]
 
         await s.calculate_position()
-        
+
         return s
 
     @classmethod
-    async def set_data_from_submission(cls, 
-            score_enc: bytes, iv: bytes, 
-            key: str, exited: int,
-            security_hash: bytes
-        ) -> None:
+    async def set_data_from_submission(
+        cls, score_enc: bytes, iv: bytes, key: str, exited: int
+    ) -> None:
         score_latin = b64decode(score_enc).decode("latin_1")
         iv_latin = b64decode(iv).decode("latin_1")
 
@@ -126,58 +164,86 @@ class Score:
 
         s = cls()
 
-        s.player = await glob.players.get_user(data[1].rstrip())
+
+        s.player = glob.players.get_user(data[1].rstrip())
+
+        if not s.player:
+            return
 
         if data[0] in glob.beatmaps:
             s.map = glob.beatmaps[data[0]]
         else:
             s.map = await Beatmap.get_beatmap(data[0])
-        
-        (s.count_300, s.count_100, s.count_50, s.count_geki, s.count_katu, s.count_miss, s.score, s.max_combo) = map(int, data[3:-7])
+
+        (
+            s.count_300,
+            s.count_100,
+            s.count_50,
+            s.count_geki,
+            s.count_katu,
+            s.count_miss,
+            s.score,
+            s.max_combo,
+        ) = map(int, data[3:-7])
 
         s.mode = Mode(int(data[15]))
 
-        s.calculate_accuracy()
+        s.accuracy = score.calculate_accuracy(
+            s.mode, 
+            s.count_300,
+            s.count_100,
+            s.count_50,
+            s.count_geki,
+            s.count_katu,
+            s.count_miss,
+        )
+        
         s.perfect = s.max_combo == s.map.max_combo
 
         s.rank = data[12]
 
         s.mods = int(data[13])
-        s.passed = data[14] == "True"
+        passed = data[14] == "True"
 
         if exited:
             s.status = SubmitStatus.QUIT
 
         s.relax = bool(int(data[13]) & Mods.RELAX)
 
-        if s.passed: 
-            await s.calculate_position() 
+        if passed:
+            await s.calculate_position()
 
-            ez = ezpp_new()
+            if Approved(s.map.approved - 1) not in (
+                Approved.LOVED,
+                Approved.PENDING,
+                Approved.WIP,
+                Approved.GRAVEYARD,
+            ):
+                ez = pp.ezpp_new()
 
-            if s.mods: 
-                ezpp_set_mods(ez, s.mods)
+                if s.mods:
+                    pp.ezpp_set_mods(ez, s.mods)
 
-            ezpp_set_combo(ez, s.max_combo)
-            ezpp_set_nmiss(ez, s.count_miss)
-            ezpp_set_accuracy_percent(ez, s.accuracy)
+                pp.ezpp_set_combo(ez, s.max_combo)
+                pp.ezpp_set_nmiss(ez, s.count_miss)
+                pp.ezpp_set_accuracy_percent(ez, s.accuracy)
 
-            ezpp(ez, f".data/beatmaps/{s.map.file}")
-            s.pp = ezpp_pp(ez)
+                pp.ezpp(ez, f".data/beatmaps/{s.map.file}")
+                s.pp = pp.ezpp_pp(ez)
 
-            ezpp_free(ez)
+                pp.ezpp_free(ez)
 
             # find our previous best score on the map
-            if (prev_best := await glob.sql.fetch(
+            if prev_best := await glob.sql.fetch(
                 "SELECT id FROM scores WHERE user_id = %s "
                 "AND relax = %s AND hash_md5 = %s "
-                "AND mode = %s AND status = 3 LIMIT 1", 
-                (s.player.id, s.relax, s.map.hash_md5, s.mode.value))
+                "AND mode = %s AND status = 3 LIMIT 1",
+                (s.player.id, s.relax, s.map.hash_md5, s.mode.value),
             ):
                 s.pb = await Score.set_data_from_sql(prev_best["id"])
 
                 # if we found a personal best score
-                # that has more score on the map, 
+                # that has more score on the map,
                 # we set it to passed.
                 if s.pb.pp < s.pp if s.relax else s.pb.score < s.score:
                     s.status = SubmitStatus.BEST
@@ -185,8 +251,8 @@ class Score:
 
                     await glob.sql.execute(
                         "UPDATE scores SET status = 2 WHERE user_id = %s AND relax = %s "
-                        "AND hash_md5 = %s AND mode = %s AND status = 3", 
-                        (s.player.id, s.relax, s.map.hash_md5, s.mode.value)
+                        "AND hash_md5 = %s AND mode = %s AND status = 3",
+                        (s.player.id, s.relax, s.map.hash_md5, s.mode.value),
                     )
                 else:
                     s.status = SubmitStatus.PASSED
@@ -199,7 +265,7 @@ class Score:
 
         # Currently all I need for this checksum
         # to work, is a storyboard checksum? Yeah,
-        # I don't know either. I KNOW
+        # I don't know either. I KNOW, nvm.
 
         # security_hash = RijndaelCbc(key, iv_latin, ZeroPadding(32), 32).decrypt(b64decode(security_hash).decode("latin_1")).decode()
         # reci_check_sum = data[2]
@@ -209,7 +275,7 @@ class Score:
         #     f"{s.count_100 + s.count_300}o15{s.count_50}{s.count_geki}"
         #     f"smustard{s.count_katu}{s.count_miss}uu"
         #     f"{s.map.hash_md5}{s.max_combo}{str(s.perfect)}"
-        #     f"{s.player.username}{s.score}{s.rank}{s.mods}Q{str(s.passed)}"    
+        #     f"{s.player.username}{s.score}{s.rank}{s.mods}Q{str(s.passed)}"
         #     f"{s.mode}{data[17].strip()}{data[16]}{security_hash}{storyboardchecksum}"
         #     .encode()
         # ).hexdigest()
@@ -229,40 +295,10 @@ class Score:
             "AND b.hash = %s AND u.privileges & 4 "
             "AND s.status = 3 AND s.mode = %s "
             "ORDER BY s.score DESC, s.submitted DESC",
-            (self.score, self.relax, 
-             self.map.hash_md5, self.mode.value)
+            (self.score, self.relax, self.map.hash_md5, self.mode.value),
         )
 
         self.position = ret["rank"] + 1
-
-    def calculate_accuracy(self):
-        if self.mode == Mode.OSU:
-            if glob.debug:
-                log.debug("Calculating accuracy for standard")
-            
-            acc = (50 * self.count_50 + 100 * self.count_100 + 300 * self.count_300) / (300 * (self.count_miss + self.count_50 + self.count_100 + self.count_300))
-
-        if self.mode == Mode.TAIKO:
-            if glob.debug:
-                log.debug("Calculating accuracy for taiko")
-            
-            acc = (0.5*self.count_100 + self.count_300) / (self.count_miss + self.count_100 + self.count_300)
-
-        if self.mode == Mode.CATCH:
-            if glob.debug:
-                log.debug("Calculating accuracy for catch the beat")
-
-            acc = (self.count_50 + self.count_100 + self.count_300) / (self.count_katu + self.count_miss + self.count_50 + self.count_100 + self.count_300)
-
-        if self.mode == Mode.MANIA:
-            if glob.debug:
-                log.debug("Calculating accuracy for mania")
-
-            log.debug(self.__dict__)
-
-            acc = (50 * self.count_50 + 100 * self.count_100 + 200 * self.count_katu + 300 * (self.count_300 + self.count_geki)) / (300 * (self.count_miss + self.count_50 + self.count_100 + self.count_katu + self.count_300 + self.count_geki))
-
-        self.accuracy = acc * 100
 
     async def save_to_db(self):
         await glob.sql.execute(
@@ -274,10 +310,25 @@ class Score:
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
             "%s, %s, %s, %s, %s, %s, %s)",
             (
-                self.map.hash_md5, self.player.id, self.score, self.pp,
-                self.count_300, self.count_100, self.count_50, self.count_geki, 
-                self.count_katu, self.count_miss, self.max_combo, self.accuracy,
-                self.perfect, self.rank, self.mods, self.status.value, self.play_time, 
-                self.mode.value, self.submitted, self.relax
-            )
+                self.map.hash_md5,
+                self.player.id,
+                self.score,
+                self.pp,
+                self.count_300,
+                self.count_100,
+                self.count_50,
+                self.count_geki,
+                self.count_katu,
+                self.count_miss,
+                self.max_combo,
+                self.accuracy,
+                self.perfect,
+                self.rank,
+                self.mods,
+                self.status.value,
+                self.play_time,
+                self.mode.value,
+                self.submitted,
+                self.relax,
+            ),
         )

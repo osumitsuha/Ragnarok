@@ -1,55 +1,12 @@
+from objects.score import ScoreFrame
+from constants.playmode import Mode
+from objects.match import Match
+from constants.mods import Mods
+from constants.match import *
+from typing import AnyStr
+from objects import glob
 import struct
-from utils import log
-from packets.writer import Types
 
-def read_packet(data: bytes, structure: tuple):
-    reader = Reader(data)
-
-    data = {}
-
-    for struct in structure:
-        type = struct[1] # data type
-
-        ret = b""
-
-        if type == Types.int8:
-            ret = reader.read_int8()
-        elif type == Types.uint8:
-            ret = reader.read_uint8()
-        elif type == Types.int16:
-            ret = reader.read_int16()
-        elif type == Types.uint16:
-            ret = reader.read_uint16()
-        elif type == Types.int32:
-            ret = reader.read_int32()
-        elif type == Types.uint32:
-            ret = reader.read_uint32()
-        elif type == Types.int64:
-            ret = reader.read_int64()
-        elif type == Types.uint64:
-            ret = reader.read_uint64()
-
-        elif type == Types.byte:
-            ret = reader.read_bytes()
-
-        elif type == Types.string:
-            ret = reader.read_str()
-        elif type == Types.float32:
-            ret = reader.read_float32()
-        elif type == Types.float64:
-            ret = reader.read_float64()
-        elif type == Types.int32_list:
-            ret = reader.read_i32_list()
-        elif type == Types.raw:
-            ret = reader.read_raw()
-        else:
-            log.error("Type: %s; has not yet been implemented" % (type))
-            return b""
-
-        data[struct[0]] = ret
-
-    return data
-        
 
 class Reader:
     def __init__(self, packet_data: bytes):
@@ -57,110 +14,188 @@ class Reader:
         self.offset = 0
         self.packet_id, self.length = self.get_packet_length_und_id()
 
-    def read_bytes(self):
-        ret = struct.unpack("<b", self.packet_data[self.offset:self.offset+1])
-        self.offset += 1
-        return ret[0]
-    
-    def read_unsigned_bytes(self):
-        ret = struct.unpack("<B", self.packet_data[self.offset:self.offset+1])
+    @property
+    def data(self):
+        return self.packet_data[self.offset:]
+
+    def read_byte(self) -> int:
+        ret = struct.unpack("<b", self.data[:1])
         self.offset += 1
         return ret[0]
 
-    def read_int8(self):
-        ret = self.packet_data[self.offset:self.offset+1]
+    def read_ubyte(self) -> int:
+        ret = struct.unpack("<B", self.data[:1])
         self.offset += 1
-        return ret[0] - 256 if ret[0] > 127 else ret[0]
+        return ret[0]
 
-    def read_int16(self):
-        ret = struct.unpack("<h", self.packet_data[self.offset:self.offset+2])
+    def read_int8(self) -> int:
+        ret = int.from_bytes(self.data[:1], "little", signed=True)
+        self.offset += 1
+        return ret  - 256 if ret > 127 else ret
+
+    def read_uint8(self) -> int:
+        ret = int.from_bytes(self.data[:1], "little", signed=False)
+        self.offset += 1
+        return ret
+
+    def read_int16(self) -> int:
+        ret = int.from_bytes(self.data[:2], "little", signed=True)
         self.offset += 2
-        return ret[0]
+        return ret
 
-    def read_int32(self):
-        ret = struct.unpack("<i", self.packet_data[self.offset:self.offset+4])
-        self.offset += 4
-        return ret[0]
-
-    def read_int64(self):
-        ret = struct.unpack("<q", self.packet_data[self.offset:self.offset+8])
-        self.offset += 8
-        return ret[0]
-
-    def read_uint8(self):
-        ret = self.packet_data[self.offset:self.offset+1]
-        self.offset += 1
-        return ret[0]
-
-    def read_uint16(self):
-        ret = struct.unpack("<H", self.packet_data[self.offset:self.offset+2])
+    def read_uint16(self) -> int:
+        ret = int.from_bytes(self.data[:2], "little", signed=False)
         self.offset += 2
-        return ret[0]
+        return ret
 
-    def read_uint32(self):
-        ret = struct.unpack("<I", self.packet_data[self.offset:self.offset+4])
+    def read_int32(self) -> int:
+        ret = int.from_bytes(self.data[:4], "little", signed=True)
         self.offset += 4
-        return ret[0]
+        return ret
 
-    def read_uint64(self):
-        ret = struct.unpack("<Q", self.packet_data[self.offset:self.offset+8])
+    def read_uint32(self) -> int:
+        ret = int.from_bytes(self.data[:4], "little", signed=False)
+        self.offset += 4
+        return ret
+
+    def read_int64(self) -> int:
+        ret = int.from_bytes(self.data[:8], "little", signed=True)
         self.offset += 8
-        return ret[0]
+        return ret
+
+    def read_uint64(self) -> int:
+        ret = int.from_bytes(self.data[:8], "little", signed=False)
+        self.offset += 8
+        return ret
 
     def read_i32_list(self) -> tuple[int]:
         length = self.read_int16()
 
-        ret = struct.unpack(f"<{'I' * length}", self.packet_data[self.offset:self.offset+length*4]) #i32
+        ret = struct.unpack(
+            f"<{'I' * length}", self.data[:length * 4]
+        ) 
+        
         self.offset += length * 4
         return ret
 
     def read_float32(self) -> float:
-        ret = struct.unpack('<f', self.packet_data[self.offset:self.offset+4])
+        ret = struct.unpack("<f", self.data[:4])
         self.offset += 4
         return ret
 
     def read_float64(self) -> float:
-        ret = struct.unpack('<d', self.packet_data[self.offset:self.offset+8])
+        ret = struct.unpack("<d", self.data[:8])
         self.offset += 8
         return ret
 
-    def get_packet_length_und_id(self):
-        ret = struct.unpack("<HxI", self.packet_data[self.offset:self.offset+7])
+    def get_packet_length_und_id(self) -> int:
+        ret = struct.unpack("<HxI", self.data[:7])
         self.offset += 7
         return ret[0], ret[1]
 
-    def _read_uleb128(self, value):
+    def read_str(self) -> str:
+        self.offset += 1
+
         shift = 0
-        arr = [0,0]	#total, length
-        b = 0
+        result = 0
 
         while True:
-            b = value[arr[1]]
-            arr[1]+=1
-            arr[0] |= int(b & 127) << shift
-            if b & 128 == 0:
+            b = self.data[0]
+            self.offset += 1
+
+            result |= (b & 0x7F) << shift
+
+            if b & 0x80 == 0:
                 break
+
             shift += 7
 
-        return arr
+        ret = bytes(self.data[:result]).decode()
 
-    # what the fuck is this code
-    def read_str(self):
-        value = self._read_uleb128(self.packet_data[self.offset+1:])
-
-        ret = self.packet_data[self.offset+value[1]:self.offset+value[0]+value[1]+1][1:].decode()
-        if ret == "\x00":
-            return b""
-
-        self.offset += value[0]+value[1]+1
+        self.offset += result
         return ret
 
-    def _read_raw(self, length: int):
-        ret = self.packet_data[self.offset:self.offset+length]
+    def _read_raw(self, length: int) -> AnyStr:
+        ret = self.data[:length]
         self.offset += length
         return ret
 
-    def read_raw(self):
-        ret = self.packet_data[self.offset:self.offset+self.length]
+    def read_raw(self) -> AnyStr:
+        ret = self.data[:self.length]
         self.offset += self.length
         return ret
+
+    def read_match(self) -> Match:
+        m = Match()
+
+        m.match_id = len(glob.matches.matches)
+
+        self.offset += 2
+
+        m.in_progress = self.read_int8()
+
+        self.read_int8()  # ignore match type; 0 = normal osu!, 1 = osu! arcade
+
+        m.mods = Mods(self.read_int32())
+
+        m.match_name = self.read_str()
+        m.match_pass = self.read_str()
+
+        m.map_title = self.read_str()
+        m.map_id = self.read_int32()
+        m.map_md5 = self.read_str()
+
+        for slot in m.slots:
+            slot.status = SlotStatus(self.read_int8())
+
+        for slot in m.slots:
+            slot.team = SlotTeams(self.read_int8())
+
+        for slot in m.slots:
+            if slot.status & SlotStatus.OCCUPIED:
+                self.offset += 4
+
+        m.host = self.read_int32()
+
+        m.mode = Mode(self.read_int8())
+        m.scoring_type = ScoringType(self.read_int8())
+        m.team_type = TeamType(self.read_int8())
+
+        m.freemods = self.read_int8() == 1
+
+        if m.freemods:
+            for slot in m.slots:
+                slot.mods = Mods(self.read_int32())
+
+        m.seed = self.read_int32()
+
+        return m
+
+    def read_scoreframe(self) -> ScoreFrame:
+        s = ScoreFrame()
+
+        s.time = self.read_int32()
+        s.id = self.read_byte()
+
+        s.count_300 = self.read_uint16()
+        s.count_100 = self.read_uint16()
+        s.count_50 = self.read_uint16()
+        s.count_geki = self.read_uint16()
+        s.count_katu = self.read_uint16()
+        s.count_miss = self.read_uint16()
+
+        s.score = self.read_int32()
+        
+        s.max_combo = self.read_uint16()
+        s.combo = self.read_uint16()
+
+        s.perfect = self.read_int8()
+
+        s.current_hp = self.read_byte()
+        s.tag_byte = self.read_byte()
+
+        s.score_v2 = self.read_int8()
+
+        print(s.__dict__)
+
+        return s

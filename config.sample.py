@@ -1,12 +1,15 @@
-config = {
+conf = {
+    "server": {
+        "debug": False,
+        "domain": "mitsuha.pw",
+        "port": 8000
+    },
     "mysql": {
         "host": "localhost",
-        "user": "root",
-        "password": "",
-        "db": "ragnarok",
-        "autocommit": True
+        "user": "CHANGE THIS",
+        "password": "CHANGE THIS",
+        "db": "CHANGE THIS",
+        "autocommit": True,
     },
-    "osu_api_key": "https://old.ppy.sh/p/api or something idk",
-    
-    "debug": False
+    "osu_api_key": "CHANGE THIS",
 }
