@@ -1,23 +1,37 @@
-from objects.player import Player
-from objects.tokens import Tokens
-from objects.channel import Channel, Channels
-from objects.match import Match, Matches
-from config import config
+from typing import Union, Any, Callable, Pattern, TYPE_CHECKING
+from lenhttp import Router, LenHTTP
+from lib.database import Database
+from config import conf
+import re
 
-registered_routes: list = []
-registered_packets: list = []
-registered_osu_routes: list = []
-registered_commands: list = []
+if TYPE_CHECKING:
+    from objects.collections import Tokens, Channels, Matches
+    from constants.commands import Command
+    from objects.beatmap import Beatmap
+    from objects.player import Player
 
-bot = None
+server: LenHTTP = None
+
+debug: bool = conf["server"]["debug"]
+domain: str = conf["server"]["domain"]
+port: int = conf["server"]["port"]
+
+bancho: Router = None
+avatar: Router = None
+osu: Router = None
+
+registered_packets: list[dict[str, Any]] = []
+registered_tasks: list[dict[str, Callable]] = []
+
+bot: 'Player' = None
 
 prefix: str = "!"
 
-config: dict = config
+config: dict[str, Union[dict[str, Any], str, bool]] = conf
 
-sql = None
+sql: Database = None
 
-bcrypt_cache: dict = {}
+bcrypt_cache: dict[str, str] = {}
 
 title_card: str = '''
                 . . .o .. o
@@ -32,14 +46,17 @@ osu!ragnarok, an osu!bancho & /web/ emulator.
 Simon & Aoba
 '''
 
-debug: bool = config["debug"]
 
-players: list[Player] = Tokens()
+players: 'Tokens' = None
 
-channels: list[Channel] = Channels()
+channels: 'Channels' = None
 
-matches: list[Match] = Matches()
+matches: 'Matches' = None
 
 osu_key: str = config["osu_api_key"]
 
-beatmaps = {}
+beatmaps: dict[str, 'Beatmap'] = {}
+
+regex: dict[str, Pattern[str]] = {
+    "np": re.compile(r"^ACTION|https://osu.mitsuha.pw/beatmapsets/[0-9].*#/(\d*)") # taken from kurrikku cause i cant regex lol
+}

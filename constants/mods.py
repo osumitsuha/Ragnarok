@@ -1,6 +1,7 @@
-from enum import IntEnum
+from enum import IntFlag
 
-class Mods(IntEnum):
+
+class Mods(IntFlag):
     NONE = 0
     NOFAIL = 1
     EASY = 2
@@ -34,5 +35,19 @@ class Mods(IntEnum):
     SCOREV2 = 536870912
     LASTMOD = 1073741824
     KEYMOD = KEY1 | KEY2 | KEY3 | KEY4 | KEY5 | KEY6 | KEY7 | KEY8 | KEY9 | KEYCOOP
-    FREEMODALLOWED = NOFAIL | EASY | HIDDEN | HARDROCK | SUDDENDEATH | FLASHLIGHT | FADEIN | RELAX | RELAX2 | SPUNOUT | KEYMOD
+    FREEMODALLOWED = (
+        NOFAIL
+        | EASY
+        | HIDDEN
+        | HARDROCK
+        | SUDDENDEATH
+        | FLASHLIGHT
+        | FADEIN
+        | RELAX
+        | RELAX2
+        | SPUNOUT
+        | KEYMOD
+    )
     SCOREINCREASEMODS = HIDDEN | HARDROCK | DOUBLETIME | FLASHLIGHT | FADEIN
+
+    MULTIPLAYER = DOUBLETIME | NIGHTCORE | HALFTIME
