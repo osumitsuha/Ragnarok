@@ -48,6 +48,9 @@ class Reader:
         return glob.packets[self.packet.value]
 
     def read_headers(self) -> tuple[BanchoPackets, int]:
+        if len(self.data) < 7:
+            raise StopIteration
+
         ret = struct.unpack("<HxI", self.data[:7])
         self.offset += 7
         return BanchoPackets(ret[0]), ret[1]

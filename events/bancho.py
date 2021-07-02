@@ -64,32 +64,6 @@ async def handle_bancho(req: Request):
                 f"Packet <{p.packet.value} | {p.packet.name}> has been requested by {player.username} - {round(end, 2)}ms"
             )
 
-    # p = Reader(req.body)
-
-    # if p.pid in glob.packets:
-    #     # ignore restricted user trying
-    #     # to do unrestricted packets
-    #     sr = glob.packets[p.pid]
-
-    #     if player.is_restricted and (not sr.restricted):
-    #         return b""
-
-    #     start = time.time_ns()
-
-    #     await sr.callback(player, p)
-
-    #     end = (time.time_ns() - start) / 1e6
-
-    #     if glob.debug and p.pid not in IGNORED_PACKETS:
-    #         log.debug(
-    #             f"Packet <{p.pid} | {sr.name}> has been requested by {player.username} - {round(end, 2)}ms"
-    #         )
-    # else:
-    #     if glob.debug and p.pid not in IGNORED_PACKETS:
-    #         log.warn(
-    #             f"Packet <{p.pid} | {BanchoPackets(p.pid).name}> has been requested by {player.username}, although it's an unregistered packet."
-    #         )
-
     req.add_header("Content-Type", "text/html; charset=UTF-8")
     player.last_update = time.time()
 
