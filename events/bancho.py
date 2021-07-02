@@ -25,8 +25,8 @@ import re
 def register_event(packet: BanchoPackets, restricted: bool = False) -> Callable:
     def decorator(cb: Callable) -> Callable:
         glob.packets |= {packet.value: Packet(
+            packet=packet,
             callback=cb,
-            name=packet.name,
             restricted=restricted
         )}
 
@@ -49,31 +49,46 @@ async def handle_bancho(req: Request):
     if not (player := glob.players.get_user(token)):
         return await writer.Notification("Server has restarted") + await writer.ServerRestart()
 
-    p = Reader(req.body)
-
-    if p.pid in glob.packets:
-        # ignore restricted user trying
-        # to do unrestricted packets
-        sr = glob.packets[p.pid]
-
-        if player.is_restricted and (not sr.restricted):
-            return b""
+    for p in (sr := Reader(req.body)):
+        if player.is_restricted and (not p.restricted):
+            continue
 
         start = time.time_ns()
 
-        await sr.callback(player, p)
+        await p.callback(player, sr)
 
         end = (time.time_ns() - start) / 1e6
 
-        if glob.debug and p.pid not in IGNORED_PACKETS:
+        if glob.debug and p.packet.value not in IGNORED_PACKETS:
             log.debug(
-                f"Packet <{p.pid} | {sr.name}> has been requested by {player.username} - {round(end, 2)}ms"
+                f"Packet <{p.packet.value} | {p.packet.name}> has been requested by {player.username} - {round(end, 2)}ms"
             )
-    else:
-        if glob.debug and p.pid not in IGNORED_PACKETS:
-            log.debug(
-                f"Packet <{p.pid} | {BanchoPackets(p.pid).name}> has been requested by {player.username}, although it's an unregistered packet."
-            )
+
+    # p = Reader(req.body)
+
+    # if p.pid in glob.packets:
+    #     # ignore restricted user trying
+    #     # to do unrestricted packets
+    #     sr = glob.packets[p.pid]
+
+    #     if player.is_restricted and (not sr.restricted):
+    #         return b""
+
+    #     start = time.time_ns()
+
+    #     await sr.callback(player, p)
+
+    #     end = (time.time_ns() - start) / 1e6
+
+    #     if glob.debug and p.pid not in IGNORED_PACKETS:
+    #         log.debug(
+    #             f"Packet <{p.pid} | {sr.name}> has been requested by {player.username} - {round(end, 2)}ms"
+    #         )
+    # else:
+    #     if glob.debug and p.pid not in IGNORED_PACKETS:
+    #         log.warn(
+    #             f"Packet <{p.pid} | {BanchoPackets(p.pid).name}> has been requested by {player.username}, although it's an unregistered packet."
+    #         )
 
     req.add_header("Content-Type", "text/html; charset=UTF-8")
     player.last_update = time.time()
@@ -389,25 +404,17 @@ async def lobby_part(p: Player, sr: Reader):
     # if (lobby := glob.channels.get_channel("#lobby")) in p.channels:
     #     await p.leave_channel(lobby)
 
-# id: 30 - for some reason
-# this packet doesn't request
+# id: 30
 @register_event(BanchoPackets.OSU_JOIN_LOBBY)
 async def lobby_join(p: Player, sr: Reader):
     p.in_lobby = True
-    log.info("THE RARE LOBBY JOIN PACKET")
 
     if p.match:
         await p.leave_match()
 
-    log.info("Checked for matches inside lobby join packet")
-    log.info("queuing all matches inside lobby join packet")
-
     for match in glob.matches.matches:
         if match.connected:
             p.enqueue(await writer.Match(match))
-
-    log.info("this is the end inside lobby join packet!")
-
 
 # id: 31
 @register_event(BanchoPackets.OSU_CREATE_MATCH)

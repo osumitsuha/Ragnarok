@@ -1,24 +1,56 @@
+from typing import AnyStr, Callable, Iterator
+from constants.packets import BanchoPackets
 from objects.score import ScoreFrame
 from constants.playmode import Mode
-from typing import AnyStr, Callable
 from dataclasses import dataclass
 from objects.match import Match
 from constants.mods import Mods
 from constants.match import *
 from objects import glob
+from utils import log
 import struct
+
+IGNORED_PACKETS = [4, 79]
 
 @dataclass
 class Packet:
+    packet: BanchoPackets
+
     callback: Callable
-    name: str
     restricted: bool
 
 class Reader:
     def __init__(self, packet_data: bytes):
-        self.packet_data = packet_data
+        self.packet_data = memoryview(packet_data)
         self.offset = 0
-        self.pid, self.plen = self.get_packet_length_und_id()
+        self.packet, self.plen = None, 0
+
+    def __iter__(self) -> Iterator:
+        return self
+
+    def __next__(self) -> Packet:
+        while self.data:
+            self.packet, self.plen = self.read_headers()
+
+            if self.packet.value not in glob.packets:
+                if glob.debug and self.packet.value not in IGNORED_PACKETS:
+                    log.warn(
+                        f"Packet <{self.packet.value} | {self.packet.name}> has been requested although it's an unregistered packet."
+                    )
+
+                if self.plen != 0:
+                    self.offset += self.plen
+            else:
+                break
+        else:
+            raise StopIteration
+
+        return glob.packets[self.packet.value]
+
+    def read_headers(self) -> tuple[BanchoPackets, int]:
+        ret = struct.unpack("<HxI", self.data[:7])
+        self.offset += 7
+        return BanchoPackets(ret[0]), ret[1]
 
     @property
     def data(self):
@@ -93,11 +125,6 @@ class Reader:
         ret = struct.unpack("<d", self.data[:8])
         self.offset += 8
         return ret
-
-    def get_packet_length_und_id(self) -> int:
-        ret = struct.unpack("<HxI", self.data[:7])
-        self.offset += 7
-        return ret[0], ret[1]
 
     def read_str(self) -> str:
         self.offset += 1

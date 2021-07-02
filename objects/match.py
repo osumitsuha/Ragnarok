@@ -91,7 +91,6 @@ class Match:
 
     async def transfer_host(self, slot):
         self.host = slot.p.id
-        slot.host = True
         
         slot.p.enqueue(await writer.MatchTransferHost())
 

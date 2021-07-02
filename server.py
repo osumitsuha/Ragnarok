@@ -74,5 +74,7 @@ async def after_request(req: Request):
 async def fivehundred(req: Request, tb: str):
     log.fail(f"An error occured on `{req.path}` | {req.elapsed}\n{tb}")
 
+    return b""
+
 glob.server.add_routers({glob.bancho, glob.avatar, glob.osu})
 glob.server.start()

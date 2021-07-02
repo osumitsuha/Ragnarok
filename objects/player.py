@@ -128,7 +128,7 @@ class Player:
             # leave spectating code and stuff idk
             ...
 
-        await glob.players.remove_user(self)
+        glob.players.remove_user(self)
 
         for player in glob.players.players:
             if player != self:
