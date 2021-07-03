@@ -77,10 +77,8 @@ async def help(ctx: Context) -> str:
     if ctx.args:
         trigger = ctx.args[0]
 
-        for key in glob.registered_commands:
-            key_trigger = key.cmd[len(glob.prefix):]
-
-            if key_trigger != trigger:
+        for key in commands:
+            if key.cmd != trigger:
                 continue
 
             if key.hidden:
@@ -91,7 +89,7 @@ async def help(ctx: Context) -> str:
 
             return key.doc
 
-    visible_cmds = [cmd.cmd for cmd in glob.registered_commands if not cmd.hidden and cmd.perms & ctx.author.privileges]
+    visible_cmds = [cmd.cmd for cmd in commands if not cmd.hidden and cmd.perms & ctx.author.privileges]
 
     return "List of all commands.\n " + "|".join(visible_cmds)
 
@@ -201,6 +199,7 @@ async def verify_with_key(ctx: Context) -> str:
 
 @rmp_command("help")
 async def multi_help(ctx: Context) -> str:
+    """ Multiplayer help command """
     return "Not done yet."
 
 @rmp_command("start")

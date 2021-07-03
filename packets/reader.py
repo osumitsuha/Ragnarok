@@ -32,10 +32,10 @@ class Reader:
         while self.data:
             self.packet, self.plen = self.read_headers()
 
-            if self.packet.value not in glob.packets:
-                if glob.debug and self.packet.value not in IGNORED_PACKETS:
+            if self.packet not in glob.packets:
+                if glob.debug and self.packet not in IGNORED_PACKETS:
                     log.warn(
-                        f"Packet <{self.packet.value} | {self.packet.name}> has been requested although it's an unregistered packet."
+                        f"Packet <{self.packet}> has been requested although it's an unregistered packet."
                     )
 
                 if self.plen != 0:
@@ -45,6 +45,8 @@ class Reader:
         else:
             raise StopIteration
 
+        self.packet = BanchoPackets(self.packet)
+
         return glob.packets[self.packet.value]
 
     def read_headers(self) -> tuple[BanchoPackets, int]:
@@ -53,7 +55,7 @@ class Reader:
 
         ret = struct.unpack("<HxI", self.data[:7])
         self.offset += 7
-        return BanchoPackets(ret[0]), ret[1]
+        return ret[0], ret[1]
 
     @property
     def data(self):
@@ -146,7 +148,7 @@ class Reader:
 
             shift += 7
 
-        ret = bytes(self.data[:result]).decode()
+        ret = self.data[:result].tobytes().decode()
 
         self.offset += result
         return ret
@@ -231,7 +233,5 @@ class Reader:
         s.tag_byte = self.read_byte()
 
         s.score_v2 = self.read_int8()
-
-        print(s.__dict__)
 
         return s

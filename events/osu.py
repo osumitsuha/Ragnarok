@@ -151,7 +151,7 @@ async def get_scores(req: Request):
 
     if not b:
         if not hash in glob.beatmaps:
-            glob.beatmaps[hash] = b
+            glob.beatmaps[hash] = None
 
         return b"-1|true"
 
@@ -207,7 +207,7 @@ async def get_scores(req: Request):
             f"AND u.privileges & 4 ORDER BY s.{order} DESC, s.submitted ASC LIMIT 50",
             (b.hash_md5, mode, p.relax),
         ):
-            ls: Score = await Score.set_data_from_sql(play["id"])
+            ls = await Score.set_data_from_sql(play["id"])
 
             await ls.calculate_position()
 

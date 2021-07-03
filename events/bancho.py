@@ -20,6 +20,7 @@ import bcrypt
 import struct
 import time
 import copy
+import os
 import re
 
 def register_event(packet: BanchoPackets, restricted: bool = False) -> Callable:
@@ -230,11 +231,11 @@ async def login(req: Request):
 # id: 0
 @register_event(BanchoPackets.OSU_CHANGE_ACTION, restricted=True)
 async def change_action(p: Player, sr: Reader):
-    p.status = bStatus(sr.read_byte())
+    p.status = bStatus(sr.read_uint8())
     p.status_text = sr.read_str()
     p.beatmap_md5 = sr.read_str()
     p.current_mods = sr.read_int32()
-    p.play_mode = sr.read_byte()
+    p.play_mode = sr.read_uint8()
     p.beatmap_id = sr.read_int32()
 
     p.relax = int(bool(p.current_mods & Mods.RELAX))
@@ -552,24 +553,27 @@ async def mp_score_update(p: Player, sr: Reader):
     s = sr.read_scoreframe()
 
     if m.mods & Mods.RELAX:
-        acc = general.rag_round(score.calculate_accuracy(
-            m.mode, s.count_300, s.count_100, s.count_50,
-            s.count_geki, s.count_katu, s.count_miss
-        ), 2) if s.count_300 != 0 else 0
+        if os.path.isfile(f".data/beatmaps/{m.map_id}.osu"):
+            acc = general.rag_round(score.calculate_accuracy(
+                m.mode, s.count_300, s.count_100, s.count_50,
+                s.count_geki, s.count_katu, s.count_miss
+            ), 2) if s.count_300 != 0 else 0
 
-        ez = ezpp_new()
+            ez = ezpp_new()
 
-        if m.mods:
-            ezpp_set_mods(ez, m.mods)
+            if m.mods:
+                ezpp_set_mods(ez, m.mods)
 
-        ezpp_set_combo(ez, s.max_combo)
-        ezpp_set_nmiss(ez, s.count_miss)
-        ezpp_set_accuracy_percent(ez, acc)
+            ezpp_set_combo(ez, s.max_combo)
+            ezpp_set_nmiss(ez, s.count_miss)
+            ezpp_set_accuracy_percent(ez, acc)
 
-        ezpp(ez, f".data/beatmaps/{glob.beatmaps[m.map_md5].file}")
-        s.score = int(ezpp_pp(ez)) if acc != 0 else 0
+            ezpp(ez, f".data/beatmaps/{m.map_id}.osu")
+            s.score = int(ezpp_pp(ez)) if acc != 0 else 0
 
-        ezpp_free(ez)
+            ezpp_free(ez)
+        else:
+            log.fail(f"MATCH {m.id}: Couldn't find the osu beatmap.")
 
     slot_id = m.find_user_slot(p)
 
@@ -683,7 +687,6 @@ async def mp_transfer_host(p: Player, sr: Reader):
     slot_id = sr.read_int16()
     
     if not (m := p.match):
-        log.info("no match")
         return
 
     if not (slot := m.find_slot(slot_id)):
@@ -699,7 +702,7 @@ async def mp_transfer_host(p: Player, sr: Reader):
 # id: 73 and 74
 @register_event(BanchoPackets.OSU_FRIEND_ADD, restricted=True)
 @register_event(BanchoPackets.OSU_FRIEND_REMOVE, restricted=True)
-async def remove_friend(p: Player, sr: Reader):
+async def friend(p: Player, sr: Reader):
     user = sr.read_int32()
 
     await p.handle_friend(user)

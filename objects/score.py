@@ -86,19 +86,10 @@ class Score:
         self.position: int = 0
 
         # previous_best
-        self.pb: Score = None
-
-
-        # THIS IS FOR SCOREFRAME - IGNORE.
-        self.time: int = 0
-        self.multi_id: int = 0
-        self.tag_byte: int = 0
-        self.current_hp: int = 0
-        self.combo: int = 0
-        self.score_v2: bool = False
+        self.pb: 'Score' = None
 
     @property
-    def web_format(self):
+    def web_format(self) -> str:
         return (
             f"\n{self.id}|{self.player.username}|{self.score if not self.relax else math.ceil(self.pp)}|"
             f"{self.max_combo}|{self.count_50}|{self.count_100}|{self.count_300}|{self.count_miss}|"
@@ -107,7 +98,7 @@ class Score:
         )
 
     @classmethod
-    async def set_data_from_sql(cls, score_id: int) -> None:
+    async def set_data_from_sql(cls, score_id: int) -> 'Score':
         data = await glob.sql.fetch(
             "SELECT id, user_id, hash_md5, score, pp, count_300, count_100, "
             "count_50, count_geki, count_katu, count_miss, "
@@ -156,7 +147,7 @@ class Score:
     @classmethod
     async def set_data_from_submission(
         cls, score_enc: bytes, iv: bytes, key: str, exited: int
-    ) -> None:
+    ) -> 'Score':
         score_latin = b64decode(score_enc).decode("latin_1")
         iv_latin = b64decode(iv).decode("latin_1")
 
@@ -286,7 +277,7 @@ class Score:
 
         return s
 
-    async def calculate_position(self):
+    async def calculate_position(self) -> None:
         ret = await glob.sql.fetch(
             "SELECT COUNT(*) AS rank FROM scores s "
             "INNER JOIN beatmaps b ON b.hash = s.hash_md5 "
@@ -300,7 +291,7 @@ class Score:
 
         self.position = ret["rank"] + 1
 
-    async def save_to_db(self):
+    async def save_to_db(self) -> None:
         await glob.sql.execute(
             "INSERT INTO scores (hash_md5, user_id, score, pp, "
             "count_300, count_100, count_50, count_geki, "
