@@ -4,16 +4,21 @@ from constants.playmode import Mode
 from constants.mods import Mods
 from packets import writer
 from objects import glob
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from objects.player import Player
 
 
 class Players:
     def __init__(self):
-        self.p = None  # no superman :pensive:
+        self.p: "Player" = None  # no superman :pensive:
         self.mods: Mods = Mods.NONE
         self.host: bool = False
         self.status: SlotStatus = SlotStatus.OPEN
         self.team: SlotTeams = SlotTeams.NEUTRAL
         self.loaded: bool = False
+        self.skipped: bool = False
 
     def reset(self):
         self.p = None
@@ -22,6 +27,7 @@ class Players:
         self.status = SlotStatus.OPEN
         self.team = SlotTeams.NEUTRAL
         self.loaded = False
+        self.skipped = False
 
     def copy_from(self, old):
         self.p = old.p
@@ -30,6 +36,7 @@ class Players:
         self.status = old.status
         self.team = old.team
         self.loaded = old.loaded
+        self.skipped = old.skipped
 
 
 class Match:
@@ -52,7 +59,7 @@ class Match:
         self.freemods: bool = False
 
         self.scoring_type: ScoringType = ScoringType.SCORE
-        self.pp_win_condition: bool = True
+        self.pp_win_condition: bool = False
         self.team_type: TeamType = TeamType.HEAD2HEAD
 
         self.seed: int = 0
@@ -61,44 +68,44 @@ class Match:
 
         self.chat: Channel = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"MATCH-{self.match_id}"
 
-    def get_free_slot(self):
+    def get_free_slot(self) -> int:
         for id, slot in enumerate(self.slots):
             if slot.status == SlotStatus.OPEN:
                 return id
 
-    def find_host(self):
+    def find_host(self) -> Players:
         for slot in self.slots:
             if slot.p.id == self.host:
                 return slot
 
-    def find_user(self, p):
+    def find_user(self, p: "Player") -> Players:
         for slot in self.slots:
             if slot.p == p:
                 return slot
 
-    def find_user_slot(self, p):
+    def find_user_slot(self, p: "Player") -> int:
         for id, slot in enumerate(self.slots):
             if slot.p == p:
                 return id
 
-    def find_slot(self, slot_id):
+    def find_slot(self, slot_id: int) -> Players:
         for id, slot in enumerate(self.slots):
             if id == slot_id:
                 return slot
 
-    async def transfer_host(self, slot):
+    async def transfer_host(self, slot) -> None:
         self.host = slot.p.id
-        
+
         slot.p.enqueue(await writer.MatchTransferHost())
 
         self.enqueue(await writer.Notification(f"{slot.p.username} became host!"))
 
         await self.enqueue_state()
 
-    async def enqueue_state(self, immune: set[int] = set(), lobby: bool = False):
+    async def enqueue_state(self, immune: set[int] = set(), lobby: bool = False) -> None:
         for p in self.connected:
             if p.id not in immune:
                 p.enqueue(await writer.MatchUpdate(self))
@@ -107,7 +114,7 @@ class Match:
             chan = glob.channels.get_channel("#lobby")
             chan.enqueue(await writer.MatchUpdate(self))
 
-    def enqueue(self, data, lobby: bool = False):
+    def enqueue(self, data, lobby: bool = False) -> None:
         for p in self.connected:
             p.enqueue(data)
 

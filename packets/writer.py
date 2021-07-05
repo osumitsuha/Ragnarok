@@ -42,6 +42,7 @@ class Types(IntEnum):
 
     message = 23
 
+
 async def write_uleb128(value: int) -> bytearray:
     if value == 0:
         return bytearray(b"\x00")
@@ -80,6 +81,7 @@ async def write_int32_list(values: tuple[int]) -> bytearray:
 
     return data
 
+
 async def write_multislots(slots) -> bytearray:
     ret = bytearray()
 
@@ -112,6 +114,7 @@ async def write_str(string: str) -> bytearray:
     data += string.encode()
     return data
 
+
 async def write_msg(sender: str, msg: str, chan: str, id: int) -> bytearray:
     ret = bytearray()
 
@@ -119,8 +122,9 @@ async def write_msg(sender: str, msg: str, chan: str, id: int) -> bytearray:
     ret += await write_str(msg)
     ret += await write_str(chan)
     ret += id.to_bytes(4, "little", signed=True)
- 
+
     return ret
+
 
 async def write(pID: int, *args: tuple[Any, ...]) -> bytes:
     data = bytearray(struct.pack("<Hx", pID))
@@ -149,6 +153,7 @@ async def write(pID: int, *args: tuple[Any, ...]) -> bytes:
 
     data[3:3] += struct.pack("<I", len(data) - 3)
     return bytes(data)
+
 
 async def UserID(id: int) -> bytes:
     """
@@ -220,7 +225,7 @@ async def UpdateFriends(friends_id: tuple[int]):
     return await write(BanchoPackets.CHO_FRIENDS_LIST, (friends_id, Types.int32_list))
 
 
-async def UpdateStats(p: 'Player') -> bytes:
+async def UpdateStats(p: "Player") -> bytes:
     if p not in glob.players.players:
         return b""
 
@@ -242,7 +247,7 @@ async def UpdateStats(p: 'Player') -> bytes:
     )
 
 
-async def UserPresence(p: 'Player') -> bytes:
+async def UserPresence(p: "Player") -> bytes:
     if p not in glob.players.players:
         return b""
 
@@ -293,6 +298,7 @@ async def ChanJoin(name: str) -> bytes:
 async def ChanKick(name: str) -> bytes:
     return await write(BanchoPackets.CHO_CHANNEL_KICK, (name, Types.string))
 
+
 async def ChanAutoJoin(chan: str) -> bytes:
     return await write(BanchoPackets.CHO_CHANNEL_AUTO_JOIN, (chan, Types.string))
 
@@ -336,7 +342,7 @@ async def FriendsList(*ids: list[int]) -> bytes:
     return await write(BanchoPackets.CHO_FRIENDS_LIST, (ids, Types.int32_list))
 
 
-def get_match_struct(m: 'Match', send_pass: bool = False) -> bytes:
+def get_match_struct(m: "Match", send_pass: bool = False) -> bytes:
     struct = [
         (m.match_id, Types.int16),
         (m.in_progress, Types.int8),
@@ -375,82 +381,95 @@ def get_match_struct(m: 'Match', send_pass: bool = False) -> bytes:
     return struct
 
 
-async def Match(m: 'Match') -> bytes:
+async def Match(m: "Match") -> bytes:
     struct = get_match_struct(m)
     return await write(BanchoPackets.CHO_NEW_MATCH, *struct)
-
-
-async def MatchJoin(m: 'Match') -> bytes:
-    struct = get_match_struct(m, send_pass=True)
-    return await write(BanchoPackets.CHO_MATCH_JOIN_SUCCESS, *struct)
-
-
-async def MatchUpdate(m: 'Match') -> bytes:
-    struct = get_match_struct(m, send_pass=True)
-    return await write(BanchoPackets.CHO_UPDATE_MATCH, *struct)
-
-
-async def MatchFail() -> bytes:
-    return await write(BanchoPackets.CHO_MATCH_JOIN_FAIL)
-
-
-async def MatchTransferHost() -> bytes:
-    return await write(BanchoPackets.CHO_MATCH_TRANSFER_HOST)
-
-
-async def MatchDispose(mid: int) -> bytes:
-    return await write(BanchoPackets.CHO_DISPOSE_MATCH, (mid, Types.int32))
 
 
 async def MatchAllReady() -> bytes:
     return await write(BanchoPackets.CHO_MATCH_ALL_PLAYERS_LOADED)
 
 
-async def MatchStart(m: 'Match') -> bytes:
-    struct = get_match_struct(m, send_pass=True)
-    return await write(BanchoPackets.CHO_MATCH_START, *struct)
+async def MatchComplete():
+    return await write(BanchoPackets.CHO_MATCH_COMPLETE)
 
-async def MatchScoreUpdate(s: 'ScoreFrame', slot_id: int, raw_data: bytes) -> bytes:
+
+async def MatchDispose(mid: int) -> bytes:
+    return await write(BanchoPackets.CHO_DISPOSE_MATCH, (mid, Types.int32))
+
+
+async def MatchFail() -> bytes:
+    return await write(BanchoPackets.CHO_MATCH_JOIN_FAIL)
+
+
+async def MatchInvite(m: "Match", p: "Player", reciever) -> bytes:
+    return await write(
+        BanchoPackets.CHO_MATCH_INVITE,
+        ((p.username, f"#multi_{m.match_id}", reciever, p.id), Types.message),
+    )
+
+
+async def MatchJoin(m: "Match") -> bytes:
+    struct = get_match_struct(m, send_pass=True)
+    return await write(BanchoPackets.CHO_MATCH_JOIN_SUCCESS, *struct)
+
+
+async def MatchPassChange(pwd: str) -> bytes:
+    return await write(BanchoPackets.CHO_MATCH_CHANGE_PASSWORD, (pwd, Types.string))
+
+
+async def MatchPlayerFailed(pid: int) -> bytes:
+    return await write(BanchoPackets.CHO_MATCH_PLAYER_FAILED, (pid, Types.int32))
+
+
+async def MatchScoreUpdate(s: "ScoreFrame", slot_id: int, raw_data: bytes) -> bytes:
     ret = bytearray(b"0\x00\x00")
 
-    ret += len(raw_data).to_bytes(4, 'little')
+    ret += len(raw_data).to_bytes(4, "little")
 
     ret += s.time.to_bytes(4, "little", signed="True")
     ret += struct.pack("<b", slot_id)
 
-    ret += struct.pack("<HHHHHH", s.count_300, s.count_100, s.count_50,
-                                   s.count_geki, s.count_katu, s.count_miss)
+    ret += struct.pack(
+        "<HHHHHH",
+        s.count_300,
+        s.count_100,
+        s.count_50,
+        s.count_geki,
+        s.count_katu,
+        s.count_miss,
+    )
 
     ret += s.score.to_bytes(4, "little", signed=True)
 
     ret += struct.pack("<HH", s.max_combo, s.combo)
-    
-    ret += struct.pack("<bbbb", s.perfect, s.current_hp,
-                                s.tag_byte, s.score_v2)
+
+    ret += struct.pack("<bbbb", s.perfect, s.current_hp, s.tag_byte, s.score_v2)
 
     return ret
 
-async def MatchSkip(id: int):
-    return await write(BanchoPackets.CHO_MATCH_PLAYER_SKIPPED, (id, Types.int32))
 
-async def MatchComplete():
-    return await write(BanchoPackets.CHO_MATCH_COMPLETE)
+async def MatchPlayerReqSkip(pid: id) -> bytes:
+    return await write(BanchoPackets.CHO_MATCH_PLAYER_SKIPPED, (pid, Types.int32))
 
-async def MatchInvite(m: 'Match', p: 'Player', reciever) -> bytes:
-    return await write(
-        BanchoPackets.CHO_MATCH_INVITE,
-        (
-            (
-                p.username, 
-                f"#multi_{m.match_id}",
-                reciever,
-                p.id
-            ), Types.message
-        )
-    )
+
+async def MatchSkip() -> bytes:
+    return await write(BanchoPackets.CHO_MATCH_SKIP)
+
+
+async def MatchStart(m: "Match") -> bytes:
+    struct = get_match_struct(m, send_pass=True)
+    return await write(BanchoPackets.CHO_MATCH_START, *struct)
+
 
 async def MatchTransferHost() -> bytes:
     return await write(BanchoPackets.CHO_MATCH_TRANSFER_HOST)
+
+
+async def MatchUpdate(m: "Match") -> bytes:
+    struct = get_match_struct(m, send_pass=True)
+    return await write(BanchoPackets.CHO_UPDATE_MATCH, *struct)
+
 
 async def Pong() -> bytes:
     return await write(BanchoPackets.CHO_PONG)

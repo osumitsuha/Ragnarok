@@ -22,10 +22,10 @@ bancho: Router = None
 avatar: Router = None
 osu: Router = None
 
-packets: dict[int, 'Packet'] = {}
+packets: dict[int, "Packet"] = {}
 tasks: list[dict[str, Callable]] = []
 
-bot: 'Player' = None
+bot: "Player" = None
 
 prefix: str = "!"
 
@@ -49,16 +49,18 @@ Simon & Aoba
 '''
 
 
-players: 'Tokens' = None
+players: "Tokens" = None
 
-channels: 'Channels' = None
+channels: "Channels" = None
 
-matches: 'Matches' = None
+matches: "Matches" = None
 
 osu_key: str = config["osu_api_key"]
 
-beatmaps: dict[str, 'Beatmap'] = {}
+beatmaps: dict[str, "Beatmap"] = {}
 
 regex: dict[str, Pattern[str]] = {
-    "np": re.compile(r"^ACTION|https://osu.mitsuha.pw/beatmapsets/[0-9].*#/(\d*)") # taken from kurrikku cause i cant regex lol
+    "np": re.compile(
+        r"^ACTION|https://osu.mitsuha.pw/beatmapsets/[0-9].*#/(\d*)"
+    )  # taken from kurrikku cause i cant regex lol
 }

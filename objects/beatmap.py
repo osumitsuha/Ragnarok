@@ -7,18 +7,6 @@ from constants.beatmap import Approved
 
 class Beatmap:
     def __init__(self):
-        """ A class made for handling osu! beatmaps.
-        
-        set_id: `int`
-            The beatmaps set id
-
-        map_id: `int`
-            The beatmaps map id
-
-        hash_md5: `str`
-            The beatmaps hexadecimal.
-
-        """
         self.set_id = 0
         self.map_id = 0
         self.hash_md5 = ""
@@ -55,34 +43,34 @@ class Beatmap:
 
         self.rating = 0  # added
 
-        self.scores: int = 0  # implementing in 300000 years
+        self.scores: int = 0
 
     @property
-    def file(self):
+    def file(self) -> str:
         return f"{self.map_id}.osu"
 
     @property
-    def pass_procent(self):
+    def pass_procent(self) -> float:
         return self.passes / self.plays * 100
 
     @property
-    def full_title(self):
+    def full_title(self) -> str:
         return f"{self.artist} - {self.title} [{self.version}]"
 
     @property
-    def display_title(self):
+    def display_title(self) -> str:
         return f"[bold:0,size:20]{self.artist_unicode}|{self.title_unicode}"  # You didn't see this
 
     @property
-    def url(self):
+    def url(self) -> str:
         return f"https://mitsuha.pw/beatmapsets/{self.set_id}#{self.map_id}"
 
     @property
-    def embed(self):
+    def embed(self) -> str:
         return f"[{self.url} {self.full_title}]"
 
     @property
-    def web_format(self):
+    def web_format(self) -> str:
         return f"{self.approved}|false|{self.map_id}|{self.set_id}|{self.scores}\n0\n{self.display_title}\n{self.rating}"
 
     @staticmethod
@@ -90,19 +78,17 @@ class Beatmap:
         return f"{name}Before:{prev if prev else ''}|{name}After:{after}"
 
     @classmethod
-    async def _get_beatmap_from_sql(cls, hash: str, beatmap_id: int):
+    async def _get_beatmap_from_sql(cls, hash: str, beatmap_id: int) -> "Beatmap":
         b = cls()
 
-        ret = await glob.sql.fetch(
+        if not (ret := await glob.sql.fetch(
             "SELECT set_id, map_id, hash, title, title_unicode, "
             "version, artist, artist_unicode, creator, creator_id, stars, "
             "od, ar, hp, cs, mode, bpm, approved, submit_date, approved_date, "
             "latest_update, length, drain, plays, passes, favorites, rating "
             f"FROM beatmaps WHERE {'hash' if hash else 'map_id'} = %s",
             (hash or beatmap_id),
-        )
-
-        if not ret:
+        )):
             return
 
         b.set_id = ret["set_id"]
@@ -142,7 +128,7 @@ class Beatmap:
 
         return b
 
-    async def add_to_db(self):
+    async def add_to_db(self) -> None:
         if await glob.sql.fetch(
             "SELECT 1 FROM beatmaps WHERE hash = %s LIMIT 1", (self.hash_md5)
         ):
@@ -161,13 +147,17 @@ class Beatmap:
         log.info(f"Saved {self.full_title} ({self.hash_md5}) into database")
 
     @classmethod
-    async def _get_beatmap_from_osuapi(cls, hash: str, beatmap_id):
+    async def _get_beatmap_from_osuapi(cls, hash: str, beatmap_id)  -> "Beatmap":
         b = cls()
 
         async with aiohttp.ClientSession() as session:
             # get the beatmap with its hash
             async with session.get(
-                "https://osu.ppy.sh/api/get_beatmaps?k=" + glob.osu_key + f"&{'h' if hash else 'b'}=" + hash or beatmap_id
+                "https://osu.ppy.sh/api/get_beatmaps?k="
+                + glob.osu_key
+                + f"&{'h' if hash else 'b'}="
+                + hash
+                or beatmap_id
             ) as resp:
                 if not resp or resp.status != 200:
                     return
@@ -225,7 +215,7 @@ class Beatmap:
         return b
 
     @classmethod
-    async def get_beatmap(cls, hash: str = "", beatmap_id=0):
+    async def get_beatmap(cls, hash: str = "", beatmap_id=0) -> "Beatmap":
         self = cls()  # trollface
 
         if not (ret := await self._get_beatmap_from_sql(hash, beatmap_id)):

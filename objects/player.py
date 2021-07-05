@@ -18,16 +18,16 @@ import uuid
 
 class Player:
     def __init__(
-        self, 
-        username: str, 
-        id: int, 
-        privileges: int, 
-        passhash: str, 
+        self,
+        username: str,
+        id: int,
+        privileges: int,
+        passhash: str,
         lon: float = 0.0,
         lat: float = 0.0,
         country: str = "XX",
         country_code: int = 0,
-        **kwargs
+        **kwargs,
     ) -> None:
         self.id = id
         self.username = username
@@ -53,7 +53,7 @@ class Player:
         self.presence_filter = PresenceFilter.NIL
 
         self.status = bStatus.IDLE
-        self.status_text: str = "on Vanilla"
+        self.status_text: str = ""
         self.beatmap_md5: str = ""
         self.current_mods: Mods = Mods.NONE
         self.play_mode: int = Mode.OSU
@@ -84,7 +84,9 @@ class Player:
 
         self.bot = False
 
-        self.is_restricted = not (self.privileges & Privileges.VERIFIED) and (not self.privileges & Privileges.PENDING)
+        self.is_restricted = not (self.privileges & Privileges.VERIFIED) and (
+            not self.privileges & Privileges.PENDING
+        )
         self.is_staff = self.privileges & Privileges.BAT
 
         self.last_np = None
@@ -100,7 +102,7 @@ class Player:
     @staticmethod
     def generate_token() -> str:
         return str(uuid.uuid4())
-        
+
     def safe_username(self, name) -> str:
         return name.lower().replace(" ", "_")
 
@@ -160,13 +162,13 @@ class Player:
         p.spectating = None
 
     async def join_match(self, m: Match, pwd: Optional[str] = "") -> None:
-        if self.match:
+        if (
+            self.match or
+            pwd != m.match_pass or
+            not m in glob.matches.matches
+        ):
             self.enqueue(await writer.MatchFail())
             return  # user is already in a match
-
-        if not m in glob.matches.matches:
-            self.enqueue(await writer.MatchFail())
-            return  # sus.
 
         if (free_slot := m.get_free_slot()) is None:
             self.enqueue(await writer.MatchFail())
@@ -195,11 +197,11 @@ class Player:
         await self.match.enqueue_state(lobby=True)
 
     async def leave_match(self) -> None:
-        if not self.match:
+        if (
+            not self.match or
+            not (slot := self.match.find_user(self))
+        ):
             return
-
-        if not (slot := self.match.find_user(self)):
-            return  # user couldn't be found in any slots?
 
         m = copy(self.match)
         self.match = None
@@ -231,12 +233,11 @@ class Player:
         await m.enqueue_state(immune={self.id}, lobby=True)
 
     async def join_channel(self, chan: Channel):
-        if (chan in self.channels):
-            await self.shout(f"You're already connected to {chan.name}.")
-            return
-
-        if (chan.staff and not self.is_staff):
-            await self.shout("You don't have access to join that channel.")
+        if (
+            chan in self.channels
+            or chan.staff  # if the chan is already in the user lists chans
+            and not self.is_staff  # if the user isnt staff and the chan is.
+        ):
             return
 
         self.channels.append(chan)
@@ -248,26 +249,30 @@ class Player:
 
     async def leave_channel(self, chan: Channel, kicked: bool = True):
         if not chan in self.channels:
-            await self.shout("You can't leave a channel, you're not already in.")
             return
 
         self.channels.remove(chan)
         chan.connected.remove(self)
 
-        if kicked: self.enqueue(await writer.ChanKick(chan.name))
+        if kicked:
+            self.enqueue(await writer.ChanKick(chan.name))
 
         await chan.update_info()
 
-    async def send_message(self, message, reciever: 'Player' = None):
-        reciever.enqueue(await writer.SendMessage(
-            sender=self.username,
-            message=message,
-            channel=reciever.username,
-            id=self.id
-        ))
+    async def send_message(self, message, reciever: "Player" = None):
+        reciever.enqueue(
+            await writer.SendMessage(
+                sender=self.username,
+                message=message,
+                channel=reciever.username,
+                id=self.id,
+            )
+        )
 
     async def get_friends(self) -> None:
-        async for player in glob.sql.iterall("SELECT user_id2 as id FROM friends WHERE user_id1 = %s", (self.id)):
+        async for player in glob.sql.iterall(
+            "SELECT user_id2 as id FROM friends WHERE user_id1 = %s", (self.id)
+        ):
             self.friends.add(player["id"])
 
     async def handle_friend(self, user: int) -> None:
@@ -303,9 +308,9 @@ class Player:
 
         self.privileges -= Privileges.VERIFIED
 
-        asyncio.create_task(glob.db.execute(
-            "UPDATE users SET privileges -= 4 WHERE id = %s", (self.id)
-        ))
+        asyncio.create_task(
+            glob.db.execute("UPDATE users SET privileges -= 4 WHERE id = %s", (self.id))
+        )
 
         # notify user
         await self.shout("Your account has been put in restricted mode!")
@@ -360,7 +365,6 @@ class Player:
         if cc != self.country:
             self.country = cc
 
-
         await self.save_location()
 
     async def set_location(self, get: bool = False):
@@ -383,14 +387,19 @@ class Player:
                     self.country = country_codes[ret["countryCode"]]
                     self.country_code = ret["countryCode"]
 
-                    return 
+                    return
 
-                return ret["lat"], ret["lon"], country_codes[ret["countryCode"]], ret["countryCode"]
+                return (
+                    ret["lat"],
+                    ret["lon"],
+                    country_codes[ret["countryCode"]],
+                    ret["countryCode"],
+                )
 
     async def save_location(self):
         await glob.sql.execute(
             "UPDATE users SET lon = %s, lat = %s, country = %s, cc = %s WHERE id = %s",
-            (self.longitude, self.latitude, self.country_code, self.country, self.id)
+            (self.longitude, self.latitude, self.country_code, self.country, self.id),
         )
 
     async def get_stats(self, relax: int = 0, mode: int = 0) -> dict:
@@ -438,5 +447,3 @@ class Player:
         self.pp = int(ret["pp"])
 
         return True
-
-

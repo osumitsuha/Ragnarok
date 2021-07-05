@@ -1,5 +1,6 @@
 import aiofiles
 
+
 class HitObject:
     def __init__(self):
         self.time: int = 0
@@ -10,8 +11,8 @@ class HitObject:
 
     @classmethod
     def from_str(cls, line, hr: bool = False):
-        args = line.split(",")   
-        
+        args = line.split(",")
+
         s = cls()
 
         s.time = int(args[2])
@@ -24,18 +25,17 @@ class HitObject:
 
 
 class Beatmap(list):
-    async def parse_hitobjects(self, file_name: str, hr: bool = False): 
+    async def parse_hitobjects(self, file_name: str, hr: bool = False):
         lines = None
 
-        async with aiofiles.open(file_name, "r") as file: 
+        async with aiofiles.open(file_name, "r") as file:
             lines = await file.readlines()
 
         for idx, line in enumerate(lines):
             if line == "[HitObjects]\n":
-                lines = lines[idx+1:]
+                lines = lines[idx + 1 :]
 
         for line in lines:
             super().append(HitObject.from_str(line))
 
         return self
-

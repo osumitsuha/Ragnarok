@@ -6,17 +6,18 @@ if TYPE_CHECKING:
     from objects.match import Match
     from objects.player import Player
 
+
 class Tokens:
     def __init__(self):
-        self.players: list['Player'] = []
+        self.players: list["Player"] = []
 
-    def add_user(self, p: 'Player') -> None:
+    def add_user(self, p: "Player") -> None:
         self.players.append(p)
 
-    def remove_user(self, p: 'Player') -> None:
+    def remove_user(self, p: "Player") -> None:
         self.players.remove(p)
 
-    def get_user(self, value: Union[str, int]) -> 'Player':
+    def get_user(self, value: Union[str, int]) -> "Player":
         for p in self.players:
             if (
                 p.id == value
@@ -26,14 +27,14 @@ class Tokens:
             ):
                 return p
 
-    async def get_user_offline(self, value: Union[str, int]) -> 'Player':
+    async def get_user_offline(self, value: Union[str, int]) -> "Player":
         if p := self.get_user(value):
             return p
 
         if p := await self.from_sql(value):
             return p
 
-    async def from_sql(self, value: Union[str, int]) -> 'Player':
+    async def from_sql(self, value: Union[str, int]) -> "Player":
         data = await glob.sql.fetch(
             "SELECT username, id, privileges, passhash FROM users "
             "WHERE (id = %s OR username = %s OR safe_username = %s)",
@@ -54,24 +55,25 @@ class Tokens:
 
 class Channels:
     def __init__(self):
-        self.channels: list['Channel'] = []
+        self.channels: list["Channel"] = []
 
     def add_channel(self, data: dict[str, Any]) -> None:
         self.channels.append(Channel(**data))
 
-    def remove_channel(self, c: 'Channel') -> None:
+    def remove_channel(self, c: "Channel") -> None:
         self.channels.remove(c)
 
-    def get_channel(self, name: str) -> 'Channel':
+    def get_channel(self, name: str) -> "Channel":
         for chan in self.channels:
             if chan._name == name:
                 return chan
 
+
 class Matches:
     def __init__(self):
-        self.matches: 'Match' = []
+        self.matches: "Match" = []
 
-    async def remove_match(self, m: 'Match'):
+    async def remove_match(self, m: "Match"):
         if m in self.matches:
             self.matches.remove(m)
 
@@ -80,5 +82,5 @@ class Matches:
             if match_id == match.match_id:
                 return match
 
-    async def add_match(self, m: 'Match'):
+    async def add_match(self, m: "Match"):
         self.matches.append(m)

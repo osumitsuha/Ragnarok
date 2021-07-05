@@ -12,12 +12,14 @@ import struct
 
 IGNORED_PACKETS = [4, 79]
 
+
 @dataclass
 class Packet:
     packet: BanchoPackets
 
     callback: Callable
     restricted: bool
+
 
 class Reader:
     def __init__(self, packet_data: bytes):
@@ -32,10 +34,10 @@ class Reader:
         while self.data:
             self.packet, self.plen = self.read_headers()
 
-            if self.packet not in glob.packets:
+            if self.packet not in glob.packets and (not self.packet > 109):
                 if glob.debug and self.packet not in IGNORED_PACKETS:
                     log.warn(
-                        f"Packet <{self.packet}> has been requested although it's an unregistered packet."
+                        f"Packet <{BanchoPackets(self.packet)} | {BanchoPackets(self.packet).name}> has been requested although it's an unregistered packet."
                     )
 
                 if self.plen != 0:
@@ -59,7 +61,7 @@ class Reader:
 
     @property
     def data(self):
-        return self.packet_data[self.offset:]
+        return self.packet_data[self.offset :]
 
     def read_byte(self) -> int:
         ret = struct.unpack("<b", self.data[:1])
@@ -74,7 +76,7 @@ class Reader:
     def read_int8(self) -> int:
         ret = int.from_bytes(self.data[:1], "little", signed=True)
         self.offset += 1
-        return ret  - 256 if ret > 127 else ret
+        return ret - 256 if ret > 127 else ret
 
     def read_uint8(self) -> int:
         ret = int.from_bytes(self.data[:1], "little", signed=False)
@@ -114,10 +116,8 @@ class Reader:
     def read_i32_list(self) -> tuple[int]:
         length = self.read_int16()
 
-        ret = struct.unpack(
-            f"<{'I' * length}", self.data[:length * 4]
-        ) 
-        
+        ret = struct.unpack(f"<{'I' * length}", self.data[: length * 4])
+
         self.offset += length * 4
         return ret
 
@@ -159,11 +159,57 @@ class Reader:
         return ret
 
     def read_raw(self) -> AnyStr:
-        ret = self.data[:self.plen]
+        ret = self.data[: self.plen]
         self.offset += self.plen
         return ret
 
     def read_match(self) -> Match:
+        # m = Match()
+
+        # m.match_id = len(glob.matches.matches)
+
+        # # self.offset += 2
+        # self.read_uint16()
+
+        # m.in_progress = bool(self.read_int8())
+
+        # self.read_byte()  # ignore match type; 0 = normal osu!, 1 = osu! arcade
+
+        # m.mods = Mods(self.read_uint32())
+
+        # m.match_name = self.read_str()
+        # m.match_pass = self.read_str()
+
+        # m.map_title = self.read_str()
+        # m.map_id = self.read_int32()
+        # m.map_md5 = self.read_str()
+
+        # for slot in m.slots:
+        #     slot.status = SlotStatus(self.read_int8())
+
+        # for slot in m.slots:
+        #     slot.team = SlotTeams(self.read_int8())
+
+        # for slot in m.slots:
+        #     if slot.status & SlotStatus.OCCUPIED:
+        #         # self.offset += 4
+        #         self.read_int32()
+
+        # m.host = self.read_int32()
+
+        # m.mode = Mode(self.read_byte())
+        # m.scoring_type = ScoringType(self.read_byte())
+        # m.team_type = TeamType(self.read_byte())
+
+        # m.freemods = self.read_byte() == 1
+
+        # if m.freemods:
+        #     for slot in m.slots:
+        #         slot.mods = Mods(self.read_int32())
+
+        # m.seed = self.read_int32()
+
+        # return m
         m = Match()
 
         m.match_id = len(glob.matches.matches)
@@ -223,7 +269,7 @@ class Reader:
         s.count_miss = self.read_uint16()
 
         s.score = self.read_int32()
-        
+
         s.max_combo = self.read_uint16()
         s.combo = self.read_uint16()
 

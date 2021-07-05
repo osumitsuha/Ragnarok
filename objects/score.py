@@ -15,15 +15,16 @@ import oppai as pp
 import math
 import time
 
+
 @dataclass
 class ScoreFrame:
     time: int = 0
     id: int = 0
-    
+
     count_300: int = 0
     count_100: int = 0
     count_50: int = 0
-    
+
     count_geki: int = 0
     count_katu: int = 0
     count_miss: int = 0
@@ -33,7 +34,7 @@ class ScoreFrame:
     combo: int = 0
 
     perfect: bool = False
-    
+
     current_hp: int = 0
     tag_byte: int = 0
 
@@ -86,7 +87,7 @@ class Score:
         self.position: int = 0
 
         # previous_best
-        self.pb: 'Score' = None
+        self.pb: "Score" = None
 
     @property
     def web_format(self) -> str:
@@ -98,7 +99,7 @@ class Score:
         )
 
     @classmethod
-    async def set_data_from_sql(cls, score_id: int) -> 'Score':
+    async def set_data_from_sql(cls, score_id: int) -> "Score":
         data = await glob.sql.fetch(
             "SELECT id, user_id, hash_md5, score, pp, count_300, count_100, "
             "count_50, count_geki, count_katu, count_miss, "
@@ -147,14 +148,18 @@ class Score:
     @classmethod
     async def set_data_from_submission(
         cls, score_enc: bytes, iv: bytes, key: str, exited: int
-    ) -> 'Score':
+    ) -> "Score":
         score_latin = b64decode(score_enc).decode("latin_1")
         iv_latin = b64decode(iv).decode("latin_1")
 
-        data = RijndaelCbc(key, iv_latin, ZeroPadding(32), 32).decrypt(score_latin).decode().split(":")
+        data = (
+            RijndaelCbc(key, iv_latin, ZeroPadding(32), 32)
+            .decrypt(score_latin)
+            .decode()
+            .split(":")
+        )
 
         s = cls()
-
 
         s.player = glob.players.get_user(data[1].rstrip())
 
@@ -180,7 +185,7 @@ class Score:
         s.mode = Mode(int(data[15]))
 
         s.accuracy = score.calculate_accuracy(
-            s.mode, 
+            s.mode,
             s.count_300,
             s.count_100,
             s.count_50,
@@ -188,7 +193,7 @@ class Score:
             s.count_katu,
             s.count_miss,
         )
-        
+
         s.perfect = s.max_combo == s.map.max_combo
 
         s.rank = data[12]

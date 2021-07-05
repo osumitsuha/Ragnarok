@@ -1,6 +1,6 @@
+from constants.match import SlotStatus, ScoringType
 from constants.player import Privileges
 from constants.beatmap import Approved
-from constants.match import SlotStatus
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from objects.bot import Louise
@@ -11,6 +11,7 @@ from objects import glob
 from utils import log
 import asyncio
 import random
+import copy
 import uuid
 import time
 
@@ -18,62 +19,82 @@ if TYPE_CHECKING:
     from objects.player import Player
     from objects.channel import Channel
 
+
 @dataclass
 class Context:
-    author: 'Player'
-    reciever: Union['Channel', 'Player']
-    
+    author: "Player"
+    reciever: Union["Channel", "Player"]
+
     cmd: str
     args: list[str]
+
 
 @dataclass
 class Command:
     trigger: Callable
     cmd: str
-    
+    aliases: list[str]
+
     perms: Privileges
     doc: str
     hidden: bool
 
-commands: list['Command'] = []
-mp_commands: list['Command'] = []
 
-def rmp_command(trigger: str, required_perms=Privileges.USER, hidden=False):
+commands: list["Command"] = []
+mp_commands: list["Command"] = []
+
+
+def rmp_command(
+    trigger: str,
+    required_perms: Privileges = Privileges.USER,
+    hidden: str = False,
+    aliases: list[str] = [],
+):
     def decorator(cb: Callable) -> Callable:
         cmd = Command(
             trigger=cb,
             cmd=trigger,
+            aliases=aliases,
             perms=required_perms,
             doc=cb.__doc__,
-            hidden=hidden
+            hidden=hidden,
         )
 
         mp_commands.append(cmd)
 
     return decorator
 
-def register_command(trigger: str, required_perms=Privileges.USER, hidden=False):
+
+def register_command(
+    trigger: str,
+    required_perms: Privileges = Privileges.USER,
+    hidden: str = False,
+    aliases: list[str] = [],
+):
     def decorator(cb: Callable) -> Callable:
         cmd = Command(
             trigger=cb,
             cmd=trigger,
+            aliases=aliases,
             perms=required_perms,
             doc=cb.__doc__,
-            hidden=hidden
+            hidden=hidden,
         )
 
         commands.append(cmd)
 
     return decorator
 
-# 
+
+#
 # Normal user commands
 #
 
+
 @register_command("help")
 async def help(ctx: Context) -> str:
-    """ The help message """
-    
+    """The help message"""
+
     if ctx.args:
         trigger = ctx.args[0]
 
@@ -87,26 +108,27 @@ async def help(ctx: Context) -> str:
             if not key.perms & ctx.author.privileges:
                 continue
 
-            return key.doc
+            return f"{glob.prefix}{key.cmd} | Needed privileges ~> {key.perms.name}\nDescription: {key.doc}"
 
-    visible_cmds = [cmd.cmd for cmd in commands if not cmd.hidden and cmd.perms & ctx.author.privileges]
+    visible_cmds = [
+        cmd.cmd
+        for cmd in commands
+        if not cmd.hidden and cmd.perms & ctx.author.privileges
+    ]
 
     return "List of all commands.\n " + "|".join(visible_cmds)
 
 
 @register_command("ping")
 async def ping_command(ctx: Context) -> str:
-    """ A command that pings the server, to see if it responds. """
+    """Ping the server, to see if it responds."""
 
     return "PONG"
 
 
 @register_command("roll")
 async def roll(ctx: Context) -> str:
-    """ A command that rolls a number to 0 to `x`.
-        arg: `x` | 100 (default)
-            [OPTIONAL] Sets the `x` variable.
-    """
+    """Roll a dice!"""
 
     x = 100
 
@@ -120,19 +142,13 @@ async def roll(ctx: Context) -> str:
 async def last_np(ctx: Context) -> str:
     if not ctx.author.last_np:
         return "No np."
-        
+
     return ctx.author.last_np.full_title
 
 
 @register_command("stats")
 async def user_stats(ctx: Context) -> str:
-    """ A command that displays `username`s stats for the choosen gamemode.
-        arg: `username`
-            The users username
-
-        arg: `rx/vn` | `vn` (default)
-            [OPTIONAL] Choose between, if you want the relax stats or vanilla stats.
-    """
+    """Display a users stats both vanilla or relax."""
 
     if len(ctx.args) < 1:
         return "Usage: !stats <username>"
@@ -158,10 +174,7 @@ async def user_stats(ctx: Context) -> str:
 
 @register_command("verify", required_perms=Privileges.PENDING)
 async def verify_with_key(ctx: Context) -> str:
-    """ A command that verifies your account, with the help of a key.
-        arg: `key`
-            The key used to get the account verified.
-    """
+    """Verify your account with our key system!"""
 
     if ctx.reciever[0] == "#":
         return "This command only works in BanchoBot's PMs."
@@ -171,59 +184,77 @@ async def verify_with_key(ctx: Context) -> str:
 
     key = ctx.args[0]
 
-    if not (key_info := await glob.sql.fetch("SELECT id, beta_key, made FROM beta_keys WHERE beta_key = %s", (key))):
+    if not (
+        key_info := await glob.sql.fetch(
+            "SELECT id, beta_key, made FROM beta_keys WHERE beta_key = %s", (key)
+        )
+    ):
         return "Invalid key"
 
     if key_info["made"] >= time.time():
-        asyncio.create_task(glob.sql.execute("DELETE FROM beta_keys WHERE id = %s", key_info["id"]))
+        asyncio.create_task(
+            glob.sql.execute("DELETE FROM beta_keys WHERE id = %s", key_info["id"])
+        )
 
         return "Expired key. (older than 7 days)"
 
-    asyncio.create_task(glob.sql.execute(
-        "UPDATE users SET privileges = %s WHERE id = %s",
-        (Privileges.USER.value + Privileges.VERIFIED.value, ctx.author.id)
-    ))
+    asyncio.create_task(
+        glob.sql.execute(
+            "UPDATE users SET privileges = %s WHERE id = %s",
+            (Privileges.USER.value + Privileges.VERIFIED.value, ctx.author.id),
+        )
+    )
 
-    asyncio.create_task(glob.sql.execute("DELETE FROM beta_keys WHERE id = %s", key_info["id"]))
+    asyncio.create_task(
+        glob.sql.execute("DELETE FROM beta_keys WHERE id = %s", key_info["id"])
+    )
 
     ctx.author.privileges = Privileges.USER + Privileges.VERIFIED
-    ctx.author.enqueue(await writer.Notification("Welcome to Ragnarok. You've successfully verified your account and gained beta access! If you see any bugs or anything unusal, please report it to one of the developers, through Github issues or Discord."))
+    ctx.author.enqueue(
+        await writer.Notification(
+            "Welcome to Ragnarok. You've successfully verified your account and gained beta access! If you see any bugs or anything unusal, please report it to one of the developers, through Github issues or Discord."
+        )
+    )
 
     log.info(f"{ctx.author.username} successfully verified their account with a key")
 
     return "Successfully verified your account."
 
+
 #
 # Multiplayer commands
 #
 
+
 @rmp_command("help")
 async def multi_help(ctx: Context) -> str:
-    """ Multiplayer help command """
+    """Multiplayer help command"""
     return "Not done yet."
 
-@rmp_command("start")
-async def force_start_match(ctx: Context) -> str:
-    if not (m := ctx.author.match):
-        return 
 
-    if ctx.author.id != m.host:
+@rmp_command("start")
+async def start_match(ctx: Context) -> str:
+    """Start the multiplayer when all players are ready or force start it."""
+    if not (m := ctx.author.match):
+        return
+
+    if m.host != ctx.author.id:
         return
 
     if ctx.args:
         if ctx.args[0] == "force":
             for slot in m.slots:
-                if (ss := slot.status) & SlotStatus.OCCUPIED:
-                    if ss != SlotStatus.NOMAP:
-                        ss = SlotStatus.PLAYING
+                if slot.status & SlotStatus.OCCUPIED:
+                    if slot.status != SlotStatus.NOMAP:
+                        slot.status = SlotStatus.PLAYING
                         slot.p.enqueue(await writer.MatchStart(m))
 
             await m.enqueue_state(lobby=True)
             return "Starting match... Good luck!"
 
     if not all(
-        slot.status == SlotStatus.READY 
-        for slot in m.slots 
+        slot.status == SlotStatus.READY
+        for slot in m.slots
         if slot.status & SlotStatus.OCCUPIED
     ):
         return "All players aren't ready. The command for force starting a match is !mp start force"
@@ -232,22 +263,55 @@ async def force_start_match(ctx: Context) -> str:
         if slot.status & SlotStatus.OCCUPIED:
             slot.status = SlotStatus.PLAYING
 
+    m.in_progress = True
+
     m.enqueue(await writer.MatchStart(m))
     await m.enqueue_state()
 
-# 
+
+@rmp_command("win", aliases=["wc"])
+async def win_condition(ctx: Context) -> str:
+    """Change win condition in a multiplayer match."""
+    if not ((m := ctx.author.match) or ctx.author.match.host == ctx.author.id):
+        return
+
+    if not ctx.args:
+        return f"Wrong usage. !multi {ctx.cmd} <score/acc/combo/sv2/pp>"
+
+    if ctx.args[0] != "pp":
+        old_scoring = copy.copy(m.scoring_type)
+        m.scoring_type = ScoringType.find_value(ctx.args[0])
+
+        await m.enqueue_state()
+        return f"Changed win condition from {old_scoring.name.lower()} to {m.scoring_type.name.lower()}"
+
+    m.scoring_type = ScoringType.SCORE  # force it to be score
+    m.pp_win_condition = True
+
+    await m.enqueue_state()
+    return "Changed win condition to pp. THIS IS IN BETA AND CAN BE REMOVED ANY TIME."
+
+
+#
 # Staff commands
 #
 
+
 @register_command("kick", required_perms=Privileges.MODERATOR)
 async def kick_user(ctx: Context) -> str:
-    """ A command that kicks the users from the server.
-        arg: `username`
-            The users username.
-    """
+    """Kick all players or just one player from the server."""
 
-    if len(ctx.args) < 1:
+    if not ctx.args:
         return "Usage: !kick <username>"
+
+    if ctx.args[0].lower() == "all":
+        for p in glob.players.players[:]:
+            if (p == ctx.author) or p.bot:
+                continue
+
+            await p.logout()
+
+        return "Kicked every. single. user online."
 
     if not (t := await glob.players.get_user_offline(" ".join(ctx.args))):
         return "Player isn't online or couldn't be found in the database"
@@ -260,10 +324,7 @@ async def kick_user(ctx: Context) -> str:
 
 @register_command("restrict", required_perms=Privileges.ADMIN)
 async def restrict_user(ctx: Context) -> str:
-    """ A command that restricts the user from the server.
-        arg: `username`
-            The users username.
-    """
+    """Restrict users from the server"""
 
     if ctx.reciever != "#staff":
         return "You can't do that here."
@@ -277,9 +338,11 @@ async def restrict_user(ctx: Context) -> str:
     if t.is_restricted:
         return "Player is already restricted? Did you mean to unrestrict them?"
 
-    asyncio.create_task(glob.sql.execute(
-        "UPDATE users SET privileges = privileges - 4 WHERE id = %s", (t.id)
-    ))
+    asyncio.create_task(
+        glob.sql.execute(
+            "UPDATE users SET privileges = privileges - 4 WHERE id = %s", (t.id)
+        )
+    )
 
     t.privileges -= Privileges.VERIFIED
 
@@ -289,12 +352,10 @@ async def restrict_user(ctx: Context) -> str:
 
     return f"Successfully restricted {t.username}"
 
+
 @register_command("unrestrict", required_perms=Privileges.ADMIN)
 async def unrestrict_user(ctx: Context) -> str:
-    """ A command that unrestricts the user from the server.
-        arg: `username`
-            The users username.
-    """
+    """Unrestrict users from the server."""
 
     if ctx.reciever != "#staff":
         return "You can't do that here."
@@ -314,25 +375,20 @@ async def unrestrict_user(ctx: Context) -> str:
 
     t.privileges += Privileges.VERIFIED
 
-    t.enqueue(
-        await writer.Notification("An admin has unrestricted your account!")
-    )
+    t.enqueue(await writer.Notification("An admin has unrestricted your account!"))
 
     return f"Successfully unrestricted {t.username}"
 
 
 @register_command("bot", required_perms=Privileges.DEV)
 async def bot_commands(ctx: Context) -> str:
-    """ A command that handles problems with the bot (Louise).
-        arg: `reconnect`
-            Reconnects the bot, if it's not connected to the server.
-    """
+    """Handle our bot ingame"""
 
-    if len(ctx.args) < 1:
+    if not ctx.args:
         return f"{glob.bot.username.lower()}."
 
     if ctx.args[0] == "reconnect":
-        if await glob.players.get_user(1):
+        if glob.players.get_user(1):
             return f"{glob.bot.username} is already connected."
 
         await Louise.init()
@@ -342,18 +398,12 @@ async def bot_commands(ctx: Context) -> str:
 
 @register_command("approve")
 async def approve_map(ctx: Context) -> str:
-    """ A command that changes a beatmaps ranked status.
-        arg: `set/map`
-            Choose between, if you want to change a single beatmaps status or the whole sets status.
-
-        arg: `rank/love/unrank`
-            Choose between, which status you want it to be updated to.
-    """
+    """Change the ranked status of beatmaps."""
 
     if not ctx.author.last_np:
         return "Please /np a map first."
-    
-    if (ctx.author.last_np.hash_md5 in glob.beatmaps):
+
+    if ctx.author.last_np.hash_md5 in glob.beatmaps:
         _map = glob.beatmaps[ctx.author.last_np.hash_md5]
     else:
         _map = ctx.author.last_np
@@ -376,7 +426,7 @@ async def approve_map(ctx: Context) -> str:
     if _map.approved == ranked_status.value:
         return f"Map is already {ranked_status.name}"
 
-    set_or_map = ctx.args[0] == "map" 
+    set_or_map = ctx.args[0] == "map"
 
     await glob.sql.execute(
         "UPDATE beatmaps SET approved = %s "
@@ -394,20 +444,7 @@ async def approve_map(ctx: Context) -> str:
 
 @register_command("key", required_perms=Privileges.ADMIN)
 async def beta_keys(ctx: Context) -> str:
-    """ A command for creating new keys or deleting.
-        arg: `create/delete` 
-            Choose between, if you want to create a new key or delete an old key.
-
-        arg: 
-            `key` | `uuid.uuid()` (default):
-                [OPTIONAL] *This is the second argument, only if you choose to create on the first argument.*
-                [OPTIONAL] The keys name.
-
-            `id`:
-                *This is the second argument, only if you choose to delete on the first argument.*
-                The id used to get the key, you want to delete.
-
-    """
+    """Create or delete keys."""
 
     if len(ctx.args) < 1:
         return "Usage: !key <create/delete> <name if create (OPTIONAL) / id if delete>"
@@ -416,13 +453,23 @@ async def beta_keys(ctx: Context) -> str:
         if len(ctx.args) != 2:
             key = uuid.uuid4().hex
 
-            asyncio.create_task(glob.sql.execute("INSERT INTO beta_keys VALUES (NULL, %s, %s)", (key, time.time() + 432000)))
+            asyncio.create_task(
+                glob.sql.execute(
+                    "INSERT INTO beta_keys VALUES (NULL, %s, %s)",
+                    (key, time.time() + 432000),
+                )
+            )
 
             return f"Created key with the name {key}"
 
         key = ctx.args[1]
 
-        asyncio.create_task(glob.sql.execute("INSERT INTO beta_keys VALUES (NULL, %s, %s)", (key, time.time() + 432000)))
+        asyncio.create_task(
+            glob.sql.execute(
+                "INSERT INTO beta_keys VALUES (NULL, %s, %s)",
+                (key, time.time() + 432000),
+            )
+        )
 
         return f"Created key with the name {key}"
 
@@ -444,7 +491,9 @@ async def beta_keys(ctx: Context) -> str:
     return "Usage: !key <create/delete> <name if create (OPTIONAL) / id if delete>"
 
 
-async def handle_commands(message: str, sender: 'Player', reciever: Union['Channel', 'Player']) -> None:
+async def handle_commands(
+    message: str, sender: "Player", reciever: Union["Channel", "Player"]
+) -> None:
     if message[:6] == "!multi":
         message = message[7:]
         commands_set = mp_commands
@@ -452,16 +501,16 @@ async def handle_commands(message: str, sender: 'Player', reciever: Union['Chann
         message = message[1:]
         commands_set = commands
 
-    log.info(commands_set)
-    log.info(message)
-
-    ctx = Context(author=sender, reciever=reciever, cmd=message.split(" ")[0].lower(), args=message.split(" ")[1:])
+    ctx = Context(
+        author=sender,
+        reciever=reciever,
+        cmd=message.split(" ")[0].lower(),
+        args=message.split(" ")[1:],
+    )
 
     for command in commands_set:
-        if (
-            ctx.cmd != command.cmd or
-            not command.perms & ctx.author.privileges
-        ):
-            continue
+        if ctx.cmd != command.cmd or not command.perms & ctx.author.privileges:
+            if ctx.cmd not in command.aliases:
+                continue
 
         return await command.trigger(ctx)

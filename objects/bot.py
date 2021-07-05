@@ -6,7 +6,7 @@ from objects import glob
 
 class Louise:
     @staticmethod
-    async def init():
+    async def init() -> bool:
         if not (
             bot := await glob.sql.fetch(
                 "SELECT id, username, privileges, passhash FROM users WHERE id = 1"
@@ -14,9 +14,7 @@ class Louise:
         ):
             return False
 
-        p = Player(
-            bot["username"], bot["id"], bot["privileges"], bot["passhash"]
-        )
+        p = Player(bot["username"], bot["id"], bot["privileges"], bot["passhash"])
 
         p.status = bStatus.WATCHING
         p.status_text = "over deez nutz"

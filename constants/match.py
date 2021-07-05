@@ -35,3 +35,10 @@ class ScoringType(IntFlag):
     ACC = 1
     COMBO = 2
     SCORE_V2 = 3
+
+    @classmethod
+    def find_value(cls, name: str) -> int:
+        c = cls(0)
+
+        if name.upper() in c.__class__.__dict__:
+            return c.__class__.__dict__[name.upper()]

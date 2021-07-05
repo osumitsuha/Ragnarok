@@ -7,9 +7,10 @@ from objects.score import Score, SubmitStatus
 from collections import defaultdict
 from constants.player import Privileges
 from lenhttp import Router, Request
-from typing import Callable
+from typing import Callable, Union, Any
 from functools import wraps
 from anticheat import run
+from utils import general
 import numpy as np
 import aiofiles
 import aiohttp
@@ -45,10 +46,12 @@ def check_auth(u: str, pw: str, method="GET"):
 
     return decorator
 
-glob.osu = Router({f"osu.{glob.domain}", f"127.0.0.1:{glob.port}"})
 
-@glob.osu.add_endpoint("/users", methods=["POST"])
-async def registration(req: Request):
+osu = Router({f"osu.{glob.domain}", f"127.0.0.1:{glob.port}"})
+
+
+@osu.add_endpoint("/users", methods=["POST"])
+async def registration(req: Request) -> Union[dict[str, Any], bytes]:
     uname = req.post_args["user[username]"]
     email = req.post_args["user[user_email]"]
     pwd = req.post_args["user[password]"]
@@ -56,10 +59,14 @@ async def registration(req: Request):
     error_response = defaultdict(list)
 
     if await glob.sql.fetch("SELECT 1 FROM users WHERE username = %s", [uname]):
-        error_response["username"].append("A user with that name already exists in our database.")
+        error_response["username"].append(
+            "A user with that name already exists in our database."
+        )
 
     if await glob.sql.fetch("SELECT 1 FROM users WHERE email = %s", [email]):
-        error_response["user_email"].append("A user with that name already exists in our database.")
+        error_response["user_email"].append(
+            "A user with that name already exists in our database."
+        )
 
     if error_response:
         return req.return_json(200, {"form_error": {"user": error_response}})
@@ -72,7 +79,13 @@ async def registration(req: Request):
             "INSERT INTO users (id, username, safe_username, passhash, "
             "email, privileges, latest_activity_time, registered_time) "
             "VALUES (NULL, %s, %s, %s, %s, %s, UNIX_TIMESTAMP(), UNIX_TIMESTAMP())",
-            [uname, uname.lower().replace(" ", "_"), pw_bcrypt, email, Privileges.PENDING.value]
+            [
+                uname,
+                uname.lower().replace(" ", "_"),
+                pw_bcrypt,
+                email,
+                Privileges.PENDING.value,
+            ],
         )
 
         await glob.sql.execute("INSERT INTO stats (id) VALUES (%s)", [id])
@@ -81,7 +94,7 @@ async def registration(req: Request):
     return b"ok"
 
 
-async def get_beatmap_file(id: int):
+async def save_beatmap_file(id: int) -> None:
     if not os.path.exists(f".data/beatmaps/{id}.osu"):
         async with aiohttp.ClientSession() as sess:
             # I hope this is legal.
@@ -89,7 +102,6 @@ async def get_beatmap_file(id: int):
                 f"https://osu.ppy.sh/web/osu-getosufile.php?q={id}",
                 headers={"user-agent": "osu!"},
             ) as resp:
-
                 if not await resp.text():
                     log.fail(
                         f"Couldn't fetch the .osu file of {id}. Maybe because api rate limit?"
@@ -100,47 +112,9 @@ async def get_beatmap_file(id: int):
                     await osu.write(await resp.text())
 
 
-@glob.osu.add_endpoint("/web/osu-osz2-getscores.php")
+@osu.add_endpoint("/web/osu-osz2-getscores.php")
 @check_auth("us", "ha")
-async def get_scores(req: Request):
-    """
-    Return format:
-    {0}|false|{1}|{2}|{3}
-    {0}
-    [bold:0,size:20]{0}|{1}
-    {0}
-    {0}|{1}|{2}|{3}|{4}|{5}|{6}|{7}|{8}|{9}|{10}|{11}|{12}|{13}|{14}|{15} # Personal Best and top 50 scores
-
-    {0} = Beatmap Status
-    false/true = Server has OSZ2 file (Must set to "false" to allow score submission)
-    {1} = Beatmap ID
-    {2} = Beatmap Set ID
-    {3} = Total Plays
-
-    {0} = Beatmap Offset
-
-    {0} = Artist Unicide
-    {1} = Title Unicode
-
-    {0} = Rating
-
-    {0} = Score ID
-    {1} = Username
-    {2} = Score
-    {3} = Combo
-    {4} = 50s
-    {5} = 100s
-    {6} = 300s
-    {7} = Misses
-    {8} = Katus
-    {9} = Gekis
-    {10} = Perfect
-    {11} = Mod Used
-    {12} = User ID
-    {13} = Rank Position on Beatmap
-    {14} = Date Played (Unix)
-    {15} = Has replay saved on server
-    """
+async def get_scores(req: Request) -> bytes:
     hash = req.get_args["c"]
     mode = int(req.get_args["m"])
 
@@ -177,7 +151,7 @@ async def get_scores(req: Request):
         p.relax = True
 
     ret = b.web_format
-    order = ("score", "pp")[int(p.relax)]
+    order = ("score", "pp")[p.relax]
 
     if b.approved >= 1:
         if not (
@@ -194,13 +168,6 @@ async def get_scores(req: Request):
 
             ret += s.web_format
 
-        # this caching method is pretty scuffed
-        # it doesn't really work the way i want
-        # and i'm not really sure how i can make
-        # it so it does work the way i want, i'll
-        # be working on this another time, but
-        # it still works
-
         async for play in glob.sql.iterall(
             "SELECT s.id FROM scores s INNER JOIN users u ON u.id = s.user_id "
             "WHERE s.hash_md5 = %s AND s.mode = %s AND s.relax = %s AND s.status = 3 "
@@ -215,7 +182,7 @@ async def get_scores(req: Request):
 
             ret += ls.web_format
 
-    asyncio.create_task(get_beatmap_file(b.map_id))
+    asyncio.create_task(save_beatmap_file(b.map_id))
 
     if not hash in glob.beatmaps:
         glob.beatmaps[hash] = b
@@ -223,26 +190,28 @@ async def get_scores(req: Request):
     return ret  # placeholder
 
 
-@glob.osu.add_endpoint("/web/osu-submit-modular-selector.php", methods=["POST"])
-async def score_submission(req: Request):
+@osu.add_endpoint("/web/osu-submit-modular-selector.php", methods=["POST"])
+async def score_submission(req: Request) -> bytes:
     if (ver := req.post_args["osuver"])[:4] != "2021":
         return b"error: oldver"
 
     submission_key = f"osu!-scoreburgr---------{ver}"
 
-    s: Score = await Score.set_data_from_submission(
-        req.post_args["score"], req.post_args["iv"], 
-        submission_key, int(req.post_args["x"])
+    s = await Score.set_data_from_submission(
+        req.post_args["score"],
+        req.post_args["iv"],
+        submission_key,
+        int(req.post_args["x"]),
     )
 
-    if not s or not (passed := s.status >= SubmitStatus.PASSED):
+    if (
+        not s or
+        not s.player or
+        not s.map
+    ):
         return b"error: no"
 
-    if not s.player:
-        return b"error: nouser"
-
-    if not s.map:
-        return b"error: beatmap"
+    passed = s.status >= SubmitStatus.PASSED
 
     # i hate this
     s.id = await glob.sql.fetch("SELECT id FROM scores ORDER BY id DESC LIMIT 1")
@@ -333,13 +302,19 @@ async def score_submission(req: Request):
                 asyncio.create_task(s.player.update_stats(s.mode, s.relax))
 
                 if s.position == 1 and not stats.is_restricted:
-                    modes = {0: "osu!", 1: "osu!taiko", 2: "osu!catch", 3: "osu!mania"}[
-                        s.mode
-                    ]
+                    modes = {
+                        0: "osu!", 
+                        1: "osu!taiko", 
+                        2: "osu!catch", 
+                        3: "osu!mania"
+                    }[s.mode]
 
                     chan: Channel = glob.channels.get_channel("#announce")
 
-                    await chan.send(f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]", sender=glob.bot)
+                    await chan.send(
+                        f"{s.player.embed} achieved #1 on {s.map.embed} ({modes}) [{'RX' if s.relax else 'VN'}]",
+                        sender=glob.bot,
+                    )
 
         if not s.relax:
 
@@ -379,9 +354,7 @@ async def score_submission(req: Request):
                                 Beatmap.add_chart("maxCombo", s.pb.max_combo, s.max_combo),
                                 Beatmap.add_chart("rankedScore", s.pb.score, s.score),
                                 Beatmap.add_chart("totalScore", s.pb.score, s.score),
-                                Beatmap.add_chart(
-                                    "pp", math.ceil(s.pb.pp), math.ceil(s.pp)
-                                ),
+                                Beatmap.add_chart( "pp", math.ceil(s.pb.pp), math.ceil(s.pp)),
                             )
                         ),
                         f"onlineScoreId:{s.id}",
@@ -407,18 +380,10 @@ async def score_submission(req: Request):
                             if not prev_stats
                             else (
                                 Beatmap.add_chart("rank", prev_stats.rank, stats.rank),
-                                Beatmap.add_chart(
-                                    "accuracy", prev_stats.accuracy, stats.accuracy
-                                ),
+                                Beatmap.add_chart("accuracy", prev_stats.accuracy, stats.accuracy),
                                 Beatmap.add_chart("maxCombo", 0, 0),
-                                Beatmap.add_chart(
-                                    "rankedScore",
-                                    prev_stats.ranked_score,
-                                    stats.ranked_score,
-                                ),
-                                Beatmap.add_chart(
-                                    "totalScore", prev_stats.total_score, stats.total_score
-                                ),
+                                Beatmap.add_chart("rankedScore", prev_stats.ranked_score, stats.ranked_score,),
+                                Beatmap.add_chart("totalScore", prev_stats.total_score, stats.total_score,),
                                 Beatmap.add_chart("pp", prev_stats.pp, stats.pp),
                             )
                         ),
@@ -428,16 +393,22 @@ async def score_submission(req: Request):
                 )
             )
 
-            asyncio.create_task(run.run_anticheat(s, f".data/replays/{s.id}.osr", f".data/beatmaps/{s.map.map_id}.osu"))
-        else: return b"error: no"
-    else: return b"error: no"
+            asyncio.create_task(
+                run.run_anticheat(
+                    s, f".data/replays/{s.id}.osr", f".data/beatmaps/{s.map.map_id}.osu"
+                )
+            )
+        else:
+            return b"error: no"
+    else:
+        return b"error: no"
 
     return "\n".join(ret).encode()
 
 
-@glob.osu.add_endpoint("/web/osu-getreplay.php")
+@osu.add_endpoint("/web/osu-getreplay.php")
 @check_auth("u", "h")
-async def get_replay(req: Request):
+async def get_replay(req: Request) -> bytes:
     async with aiofiles.open(f".data/replays/{req.get_args['c']}.osr", "rb") as raw:
         if replay := await raw.read():
             return replay
@@ -445,11 +416,31 @@ async def get_replay(req: Request):
     return b""
 
 
-@glob.osu.add_endpoint("/web/osu-comment.php", methods=["POST"])
+@osu.add_endpoint("/web/osu-comment.php", methods=["POST"])
 @check_auth("u", "p", method="POST")
-async def get_beatmap_comments(req: Request):
+async def get_beatmap_comments(req: Request) -> bytes:
     if not req.post_args:
         return b""
 
     log.info(req.post_args)
     return b""
+
+
+@osu.add_endpoint("/web/osu-screenshot.php", methods=["POST"])
+@check_auth("u", "p", method="POST")
+async def post_screenshot(req: Request) -> bytes:
+    id = general.random_string(8)
+
+    async with aiofiles.open(f".data/ss/{id}.png", "wb+") as ss:
+        await ss.write(req.files["ss"])
+
+    return f"{id}.png".encode()
+
+
+@osu.add_endpoint("/ss/<ssid>.png")
+async def get_screenshot(req: Request, ssid: int) -> bytes:
+    if os.path.isfile((path := f".data/ss/{ssid}.png")):
+        async with aiofiles.open(path, "rb") as ss:
+            return await ss.read()
+
+    return b"no screenshot with that id."

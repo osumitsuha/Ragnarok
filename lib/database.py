@@ -4,7 +4,7 @@ import aiomysql
 
 class Database:
     def __init__(self):
-        """ Simple database class object. """
+        """Simple database class object."""
         self.pool = None
 
     async def connect(self, config: Dict[str, str]) -> None:

@@ -6,7 +6,7 @@ from objects.bot import Louise
 from constants import commands  # dont remove
 from objects import glob
 from utils import log
-import os 
+import os
 import sys
 
 kwargs = {
@@ -14,6 +14,7 @@ kwargs = {
 }
 
 glob.server = LenHTTP(("127.0.0.1", 8000), **kwargs)
+
 
 @glob.server.before_serving()
 async def startup():
@@ -59,16 +60,18 @@ async def startup():
 
     log.info("Finished up connecting to everything!")
 
-@glob.avatar.after_request()
-@glob.osu.after_request()
+
+@avatar.avatar.after_request()
+@osu.osu.after_request()
 async def after_request(req: Request):
     if req.resp_code == 404:
         lprint = log.error
     else:
         lprint = log.info
-    
+
     if req.resp_code != 500:
         lprint(f"[{req.type}] {req.path} | {req.elapsed}")
+
 
 @glob.server.add_middleware(500)
 async def fivehundred(req: Request, tb: str):
@@ -76,5 +79,6 @@ async def fivehundred(req: Request, tb: str):
 
     return b""
 
-glob.server.add_routers({glob.bancho, glob.avatar, glob.osu})
+
+glob.server.add_routers({bancho.bancho, avatar.avatar, osu.osu})
 glob.server.start()

@@ -1,9 +1,5 @@
 conf = {
-    "server": {
-        "debug": False,
-        "domain": "mitsuha.pw",
-        "port": 8000
-    },
+    "server": {"debug": False, "domain": "mitsuha.pw", "port": 8000},
     "mysql": {
         "host": "localhost",
         "user": "CHANGE THIS",
