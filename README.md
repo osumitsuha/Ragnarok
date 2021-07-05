@@ -1,7 +1,7 @@
 # Ragnarok - an osu! private server
 Ragnarok is both a bancho and /web/ server, written in python3.9!
 
-Ragnarok will provide more stablibilty:tm: and way faster performance than ripple's bancho emulerator (Second login averages about 4-5ms).
+Ragnarok will provide more stablibilty:tm: and way faster performance than ripple's bancho emulator (Second login averages about 4-5ms).
 
 ## Setup
 We will not help setting up the whole server (nginx, mysql and those stuff), but just the bancho.
