@@ -6,4 +6,5 @@ osrparse==5.0.0
 LenHTTP==2.1.9
 aiomysql==0.0.21
 aiohttp==3.7.4.post0
+aiofiles==0.7.0
 bcrypt==3.2.0
