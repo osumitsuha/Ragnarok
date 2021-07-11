@@ -26,7 +26,7 @@ async def startup():
 
     for _path in (".data/avatars", ".data/replays", ".data/beatmaps"):
         if not os.path.exists(_path):
-            log.warning(
+            log.warn(
                 f"You're missing the folder {_path}! Don't worry we'll add it for you!"
             )
 
