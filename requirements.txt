@@ -5,4 +5,3 @@ numpy==1.20.3
 osrparse==5.0.0
 LenHTTP==2.1.9
 aiomysql==0.0.21
-dataclasses==0.8
