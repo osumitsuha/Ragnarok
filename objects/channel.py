@@ -23,6 +23,10 @@ class Channel:
 
         self.connected: list[Player] = []
 
+    @property
+    def is_multi(self):
+        return self.name == "#multiplayer"
+
     def enqueue(self, data: bytes, ignore: list[int] = []) -> None:
         for p in self.connected:
             if p.id not in ignore:

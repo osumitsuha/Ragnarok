@@ -7,5 +7,11 @@ conf = {
         "db": "CHANGE THIS",
         "autocommit": True,
     },
-    "osu_api_key": "CHANGE THIS",
+    "api_conf": {
+        "osu_api_key": "CHANGE THIS",
+        "mirrors": {
+            "chimu": "https://api.chimu.moe/v1/",
+            "katsu": "https://katsu.moe/"
+        }
+    }
 }

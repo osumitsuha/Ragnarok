@@ -32,18 +32,7 @@ def register_event(packet: BanchoPackets, restricted: bool = False) -> Callable:
 
     return decorator
 
-
-bancho = Router(
-    {
-        f"c.{glob.domain}",
-        f"ce.{glob.domain}",
-        f"c4.{glob.domain}",
-        f"c5.{glob.domain}",
-        f"c6.{glob.domain}",
-        f"127.0.0.1:{glob.port}",
-    }
-)
-
+bancho = Router({re.compile(rf"^c[e4-6]?\.{glob.domain}"), f"127.0.0.1:{glob.port}"})
 IGNORED_PACKETS: list[int] = [4, 79]
 
 
@@ -77,7 +66,7 @@ async def handle_bancho(req: Request):
             log.debug(
                 f"Packet <{p.packet.value} | {p.packet.name}> has been requested by {player.username} - {round(end, 2)}ms"
             )
-
+            
     req.add_header("Content-Type", "text/html; charset=UTF-8")
     player.last_update = time.time()
 
@@ -221,12 +210,14 @@ async def login(req: Request) -> bytes:
             data += await writer.ChanJoin(chan.name)
             await p.join_channel(chan)
 
+
     for player in glob.players.players:
         if player != p:
             player.enqueue(await writer.UserPresence(p) + await writer.UpdateStats(p))
 
         data += await writer.UserPresence(player)
         data += await writer.UpdateStats(player)
+
 
     data += await writer.ChanInfoEnd()
 
@@ -274,6 +265,9 @@ async def send_public_message(p: Player, sr: Reader) -> None:
     chan_name = sr.read_str()
 
     sr.read_int32()  # sender id
+
+    if p.privileges & Privileges.PENDING:
+        return
 
     if not msg or msg.isspace():
         return
@@ -326,13 +320,16 @@ async def update_stats(p: Player, sr: Reader) -> None:
 # id: 4
 @register_event(BanchoPackets.OSU_PING, restricted=True)
 async def pong(p: Player, sr: Reader) -> None:
-    p.enqueue(await writer.Pong())
+    pass
 
 
 # id: 16
 @register_event(BanchoPackets.OSU_START_SPECTATING)
 async def start_spectate(p: Player, sr: Reader) -> None:
     spec = sr.read_int32()
+
+    if p.privileges & Privileges.PENDING:
+        return
 
     if not (host := glob.players.get_user(spec)):
         return
@@ -344,6 +341,9 @@ async def start_spectate(p: Player, sr: Reader) -> None:
 @register_event(BanchoPackets.OSU_STOP_SPECTATING)
 async def stop_spectate(p: Player, sr: Reader) -> None:
     host = p.spectating
+
+    if p.privileges & Privileges.PENDING:
+        return
 
     if not host:
         return
@@ -360,6 +360,9 @@ async def spectating_frames(p: Player, sr: Reader) -> None:
     # packing manually seems to be faster, so let's use that.
     data = struct.pack("<HxI", BanchoPackets.CHO_SPECTATE_FRAMES, len(sframe)) + sframe
 
+    if p.privileges & Privileges.PENDING:
+        return
+
     for t in p.spectators:
         t.enqueue(data)
 
@@ -369,10 +372,13 @@ async def spectating_frames(p: Player, sr: Reader) -> None:
 async def unable_to_spec(p: Player, sr: Reader) -> None:
     host = p.spectating
 
+    id = sr.read_int32()
+
     if not host:
         return
 
-    id = sr.read_int32()
+    if p.privileges & Privileges.PENDING:
+        return
 
     ret = await writer.UsrCantSpec(id)
 
@@ -409,6 +415,7 @@ async def send_private_message(p: Player, sr: Reader) -> None:
                 message=msg, sender=p, reciever=glob.bot
             ):
                 await glob.bot.send_message(resp, reciever=p)
+                return
 
         await glob.bot.send_message("beep boop", reciever=p)
 
@@ -423,6 +430,9 @@ async def lobby_part(p: Player, sr: Reader) -> None:
 @register_event(BanchoPackets.OSU_JOIN_LOBBY)
 async def lobby_join(p: Player, sr: Reader) -> None:
     p.in_lobby = True
+
+    if p.privileges & Privileges.PENDING:
+        return
 
     if p.match:
         await p.leave_match()
@@ -680,7 +690,6 @@ async def mp_complete(p: Player, sr: Reader) -> None:
 
     m.in_progress = False
 
-    # ResetReady
     for slot in m.slots:
         if slot.status & SlotStatus.OCCUPIED and slot.status != SlotStatus.NOMAP:
             slot.status = SlotStatus.NOTREADY
@@ -693,6 +702,7 @@ async def mp_complete(p: Player, sr: Reader) -> None:
         pl.enqueue(await writer.MatchComplete())
 
     await m.enqueue_state(lobby=True)
+
 
 # id: 51
 @register_event(BanchoPackets.OSU_MATCH_CHANGE_MODS)
@@ -710,6 +720,10 @@ async def mp_change_mods(p: Player, sr: Reader) -> None:
             if mods & Mods.MULTIPLAYER:
                 m.mods = Mods(mods & Mods.MULTIPLAYER)
 
+                for slot in m.slots:
+                    if slot.status == SlotStatus.READY:
+                        slot.status = SlotStatus.NOTREADY
+
         slot = m.find_user(p)
 
         slot.mods = mods - (mods & Mods.MULTIPLAYER)
@@ -719,12 +733,9 @@ async def mp_change_mods(p: Player, sr: Reader) -> None:
 
         m.mods = Mods(mods)
 
-        # ResetReady
         for slot in m.slots:
             if slot.status & SlotStatus.OCCUPIED and slot.status != SlotStatus.NOMAP:
                 slot.status = SlotStatus.NOTREADY
-            slot.skipped = False
-            slot.loaded = False
 
     await m.enqueue_state()
 

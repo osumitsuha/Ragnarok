@@ -196,11 +196,8 @@ async def Notification(msg: str) -> bytes:
 
 
 async def UserPriv(privileges: int) -> bytes:
-    rank = Ranks.NONE
+    rank = Ranks.NORMAL
     rank |= Ranks.SUPPORTER
-
-    if privileges & Privileges.VERIFIED:
-        rank |= Ranks.NORMAL
 
     if privileges & Privileges.BAT:
         rank |= Ranks.BAT

@@ -11,6 +11,7 @@ from typing import Callable, Union, Any
 from functools import wraps
 from anticheat import run
 from utils import general
+from urllib.parse import unquote
 import numpy as np
 import aiofiles
 import aiohttp
@@ -22,23 +23,54 @@ import hashlib
 import asyncio
 
 
-def check_auth(u: str, pw: str, method="GET"):
+def check_auth(u: str, pw: str, cho_auth: bool = False, method="GET"):
     def decorator(cb: Callable) -> Callable:
         @wraps(cb)
         async def wrapper(req, *args, **kwargs):
             if method == "GET":
-                player = req.get_args[u]
+                player = unquote(req.get_args[u])
                 password = req.get_args[pw]
             else:
-                player = req.post_args[u]
+                player = unquote(req.post_args[u])
                 password = req.post_args[pw]
 
-            if not (p := glob.players.get_user(player)):
-                return b""
-
-            if p.passhash in glob.bcrypt_cache:
-                if password.encode("utf-8") != glob.bcrypt_cache[p.passhash]:
+            if cho_auth:
+                if not (
+                    user_info := await glob.sql.fetch(
+                        "SELECT username, id, privileges, "
+                        "passhash, lon, lat, country, cc FROM users "
+                        "WHERE safe_username = %s",
+                        [player.lower().replace(" ", "_")],
+                    )
+                ):
                     return b""
+
+                phash = user_info["passhash"].encode("utf-8")
+                pmd5 = password.encode("utf-8")
+
+                if phash in glob.bcrypt_cache:
+                    if pmd5 != glob.bcrypt_cache[phash]:
+                        log.warn(
+                            f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)"
+                        )
+
+                        return b""
+                else:
+                    if not bcrypt.checkpw(pmd5, phash):
+                        log.warn(
+                            f"USER {user_info['username']} ({user_info['id']}) | Login fail. (WRONG PASSWORD)"
+                        )
+
+                        return b""
+
+                    glob.bcrypt_cache[phash] = pmd5
+            else:
+                if not (p := glob.players.get_user(player)):
+                    return b""
+
+                if p.passhash in glob.bcrypt_cache:
+                    if password.encode("utf-8") != glob.bcrypt_cache[p.passhash]:
+                        return b""
 
             return await cb(req, *args, **kwargs)
 
@@ -112,6 +144,14 @@ async def save_beatmap_file(id: int) -> None:
                     await osu.write(await resp.text())
 
 
+@osu.add_endpoint("/web/bancho_connect.php")
+@check_auth("u", "h", cho_auth = True)
+async def bancho_connect(req: Request) -> bytes:
+    # TODO: make some verification (ch means client hash)
+    #       "error: verify" is a thing
+    return req.headers["CF-IPCountry"].lower().encode()
+
+
 @osu.add_endpoint("/web/osu-osz2-getscores.php")
 @check_auth("us", "ha")
 async def get_scores(req: Request) -> bytes:
@@ -138,10 +178,8 @@ async def get_scores(req: Request) -> bytes:
 
         return b"0|false"
 
-    p = glob.players.get_user(req.get_args["us"])
-
-    if not p:
-        return b""
+    # no need for check, as its in the decorator
+    p = glob.players.get_user(unquote(req.get_args["us"]))
 
     # pretty sus
     if not int(req.get_args["mods"]) & Mods.RELAX and p.relax:
@@ -187,7 +225,7 @@ async def get_scores(req: Request) -> bytes:
     if not hash in glob.beatmaps:
         glob.beatmaps[hash] = b
 
-    return ret  # placeholder
+    return ret.encode()  # placeholder
 
 
 @osu.add_endpoint("/web/osu-submit-modular-selector.php", methods=["POST"])
@@ -398,6 +436,8 @@ async def score_submission(req: Request) -> bytes:
                     s, f".data/replays/{s.id}.osr", f".data/beatmaps/{s.map.map_id}.osu"
                 )
             )
+
+            stats.last_score = s
         else:
             return b"error: no"
     else:
@@ -413,6 +453,51 @@ async def get_replay(req: Request) -> bytes:
         if replay := await raw.read():
             return replay
 
+    return b""
+
+@osu.add_endpoint("/web/osu-getfriends.php")
+@check_auth("u", "h")
+async def get_friends(req: Request) -> bytes:
+    p = await glob.players.get_user_offline(unquote(req.get_args["u"]))
+
+    await p.get_friends()
+
+    return '\n'.join(map(str, p.friends)).encode()
+
+
+@osu.add_endpoint("/web/osu-markasread.php")
+@check_auth("u", "h")
+async def lastfm(req: Request) -> bytes:
+    if not (chan := glob.channels.get_channel(req.get_args["channel"])):
+        return b""
+
+    # TODO: maybe make a mail system???
+    return b""
+
+
+@osu.add_endpoint("/web/lastfm.php")
+@check_auth("us", "ha")
+async def lastfm(req: Request) -> bytes:
+    # something odd in client detected
+    # TODO: add enums to check abnormal stuff
+    if req.get_args["b"][0] == "a":
+        return b"-3"
+
+    # if nothing odd happens... then keep checking
+    return b""
+
+
+@osu.add_endpoint("/web/osu-getseasonal.php")
+async def get_seasonal(req: Request) -> bytes:
+    # hmmm... it seems like there's nothing special yet
+    # TODO: make a config file for this?
+    return b"[]"
+
+
+@osu.add_endpoint("/web/osu-error.php", methods=["POST"])
+async def get_osu_error(req: Request) -> bytes:
+    # not really our problem though :trolley:
+    # not sending this to bancho, though.
     return b""
 
 

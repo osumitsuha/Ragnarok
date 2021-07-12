@@ -1,4 +1,5 @@
 from constants.match import SlotStatus, ScoringType
+from constants.packets import BanchoPackets
 from constants.player import Privileges
 from constants.beatmap import Approved
 from dataclasses import dataclass
@@ -16,8 +17,8 @@ import uuid
 import time
 
 if TYPE_CHECKING:
-    from objects.player import Player
     from objects.channel import Channel
+    from objects.player import Player
 
 
 @dataclass
@@ -69,7 +70,7 @@ def register_command(
     trigger: str,
     required_perms: Privileges = Privileges.USER,
     hidden: str = False,
-    aliases: list[str] = [],
+    aliases: tuple[str] = (),
 ):
     def decorator(cb: Callable) -> Callable:
         cmd = Command(
@@ -145,7 +146,6 @@ async def last_np(ctx: Context) -> str:
 
     return ctx.author.last_np.full_title
 
-
 @register_command("stats")
 async def user_stats(ctx: Context) -> str:
     """Display a users stats both vanilla or relax."""
@@ -176,10 +176,10 @@ async def user_stats(ctx: Context) -> str:
 async def verify_with_key(ctx: Context) -> str:
     """Verify your account with our key system!"""
 
-    if ctx.reciever[0] == "#":
+    if type(ctx.reciever) is not type(glob.bot):
         return "This command only works in BanchoBot's PMs."
 
-    if not len(ctx.args) != 1:
+    if not ctx.args:
         return "Usage: !verify <your beta key>"
 
     key = ctx.args[0]
@@ -190,13 +190,6 @@ async def verify_with_key(ctx: Context) -> str:
         )
     ):
         return "Invalid key"
-
-    if key_info["made"] >= time.time():
-        asyncio.create_task(
-            glob.sql.execute("DELETE FROM beta_keys WHERE id = %s", key_info["id"])
-        )
-
-        return "Expired key. (older than 7 days)"
 
     asyncio.create_task(
         glob.sql.execute(
@@ -235,11 +228,14 @@ async def multi_help(ctx: Context) -> str:
 @rmp_command("start")
 async def start_match(ctx: Context) -> str:
     """Start the multiplayer when all players are ready or force start it."""
-    if not (m := ctx.author.match):
+    if (
+        not ctx.reciever.is_multi
+        (m := ctx.author.match) or
+        ctx.author.match.host != ctx.author.i
+    ):
         return
 
-    if m.host != ctx.author.id:
-        return
+    m = ctx.author.match
 
     if ctx.args:
         if ctx.args[0] == "force":
@@ -269,33 +265,182 @@ async def start_match(ctx: Context) -> str:
     await m.enqueue_state()
 
 
-@rmp_command("win", aliases=["wc"])
+@rmp_command("abort", aliases=("ab"))
+async def abort_match(ctx: Context) -> str:
+    if (
+        not ctx.reciever.is_multi 
+        (m := ctx.author.match) or
+        not m.in_progress or
+        m.host != ctx.author.id
+    ): return
+
+    for s in m.slots:
+        if s.status == SlotStatus.PLAYING:
+            s.p.enqueue(await writer.write(BanchoPackets.CHO_MATCH_ABORT))
+            s.status = SlotStatus.NOTREADY
+
+            s.skipped = False
+            s.loaded = False
+
+    m.in_progress = False
+
+    await m.enqueue_state(lobby=True)
+    return "Aborted match."
+
+
+@rmp_command("win", aliases=("wc"))
 async def win_condition(ctx: Context) -> str:
     """Change win condition in a multiplayer match."""
-    if not ((m := ctx.author.match) or ctx.author.match.host == ctx.author.id):
+    if (
+        not ctx.reciever.is_multi or
+        not (m := ctx.author.match) or 
+        ctx.author.match.host != ctx.author.id
+    ):
         return
 
     if not ctx.args:
         return f"Wrong usage. !multi {ctx.cmd} <score/acc/combo/sv2/pp>"
 
-    if ctx.args[0] != "pp":
+    if ctx.args[0] in ("score", "acc", "sv2", "combo"):
         old_scoring = copy.copy(m.scoring_type)
         m.scoring_type = ScoringType.find_value(ctx.args[0])
 
         await m.enqueue_state()
         return f"Changed win condition from {old_scoring.name.lower()} to {m.scoring_type.name.lower()}"
+    elif ctx.args[0] == "pp":
+        m.scoring_type = ScoringType.SCORE  # force it to be score
+        m.pp_win_condition = True
 
-    m.scoring_type = ScoringType.SCORE  # force it to be score
-    m.pp_win_condition = True
+        await m.enqueue_state()
+        return "Changed win condition to pp. THIS IS IN BETA AND CAN BE REMOVED ANY TIME."
 
-    await m.enqueue_state()
-    return "Changed win condition to pp. THIS IS IN BETA AND CAN BE REMOVED ANY TIME."
+    return "Not a valid win condition"
 
+
+@rmp_command("move")
+async def move_slot(ctx: Context) -> str:
+    if (
+        not ctx.reciever.is_multi or 
+        not (m := ctx.author.match) or 
+        ctx.author.match.host != ctx.author.id
+    ):
+        return
+    
+    if len(ctx.args) < 2:
+        return "Wrong usage: !multi move <player> <to_slot>"
+    
+    ctx.args[1] = int(ctx.args[1]) - 1
+
+    player = glob.players.get_user(ctx.args[0])
+
+    if not (target := m.find_user(player)):
+        return "Slot is not occupied."
+
+    if (to := m.find_slot(ctx.args[1])).status & SlotStatus.OCCUPIED:
+        return "That slot is already occupied."
+
+    to.copy_from(target)
+    target.reset()
+
+    await m.enqueue_state(lobby=True)
+    
+    return f"Moved {to.p.username} to slot {ctx.args[1] + 1}"
+
+
+@rmp_command("size")
+async def change_size(ctx: Context) -> str:
+    if (
+        not ctx.reciever.is_multi or
+        not  (m := ctx.author.match) or 
+        ctx.author.match.host != ctx.author.id or
+        m.in_progress
+    ):
+        return
+
+    if not ctx.args:
+        return "Wrong usage: !multi size <amount of available slots>"
+
+    for slot_id in range(0, int(ctx.args[0])):
+        slot = m.find_slot(slot_id)
+
+        if not slot.status & SlotStatus.OCCUPIED:
+            slot.status = SlotStatus.LOCKED
+
+    return f"Changed size to {ctx.args[0]}"
+
+@rmp_command("get")
+async def get_beatmap(ctx: Context) -> str:
+    if (
+        not ctx.reciever.is_multi or 
+        not (m := ctx.author.match)
+    ):
+        return
+
+    if not ctx.args:
+        return "Wrong usage: !multi get <chimu|katsu>"
+
+    if m.map_id == 0:
+        return "The host has probably choosen a map that needs to be updated! Tell them to do so!"
+
+    if ctx.args[0] not in (mirrors := glob.config["api_conf"]["mirrors"]):
+        return "Mirror doesn't exist in our database"
+
+    url = mirrors[ctx.args[0]]
+
+    if ctx.args[0] == "chimu":
+        url += f"download/{m.map_id}"
+        
+    elif ctx.args[0] == "katsu":
+        url += f"d/{m.map_id}"
+
+    return f"[{url} Download beatmap from {ctx.args[0]}]"
+
+
+@rmp_command("invite")
+async def invite_people(ctx: Context) -> str:
+    if (
+        not ctx.reciever.is_multi or 
+        not (m := ctx.author.match)
+    ):
+        return
+
+    if not ctx.args:
+        return "Wrong usage: !multi invite <username>"
+
+    if not (target := glob.players.get_user(ctx.args[0])):
+        return "The user is not online."
+
+    if target is ctx.author:
+        return "You can't invite yourself."
+
+    await ctx.author.send_message(
+        f"Come join my multiplayer match: [osump://{m.match_id}/{m.match_pass.replace(' ', '_')} {m.match_name}]",
+        reciever=target
+    )
+
+    return f"Invited {target.username}"
 
 #
 # Staff commands
 #
 
+
+@register_command("announce", required_perms=Privileges.MODERATOR)
+async def announce(ctx: Context) -> str:
+    if len(ctx.args) < 2:
+        return
+
+    msg = " ".join(ctx.args[1:])
+
+    if ctx.args[0] == "all":
+        glob.players.enqueue(await writer.Notification(msg))
+    else:
+        if not (target := glob.players.get_user(ctx.args[0])):
+            return "Player is not online."
+
+        target.enqueue(await writer.Notification(msg))
+
+    return "ok"
 
 @register_command("kick", required_perms=Privileges.MODERATOR)
 async def kick_user(ctx: Context) -> str:
@@ -326,7 +471,7 @@ async def kick_user(ctx: Context) -> str:
 async def restrict_user(ctx: Context) -> str:
     """Restrict users from the server"""
 
-    if ctx.reciever != "#staff":
+    if (not ctx.reciever == glob.bot) and ctx.reciever.name != "#staff":
         return "You can't do that here."
 
     if len(ctx.args) < 1:

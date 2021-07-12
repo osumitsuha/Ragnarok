@@ -3,6 +3,7 @@ from constants.match import SlotStatus
 from objects.channel import Channel
 from constants.levels import levels
 from constants.playmode import Mode
+from typing import TYPE_CHECKING
 from constants.mods import Mods
 from objects.match import Match
 from typing import Optional
@@ -14,6 +15,10 @@ import asyncio
 import aiohttp
 import time
 import uuid
+
+if TYPE_CHECKING:
+    from objects.beatmap import Beatmap
+    from objects.score import Score
 
 
 class Player:
@@ -29,34 +34,34 @@ class Player:
         country_code: int = 0,
         **kwargs,
     ) -> None:
-        self.id = id
-        self.username = username
-        self.safe_name = self.safe_username(self.username)
-        self.privileges = privileges
-        self.passhash = passhash
+        self.id: int = id
+        self.username: str = username
+        self.safe_name: str = self.safe_username(self.username)
+        self.privileges: int = privileges
+        self.passhash: str = passhash
 
-        self.country_code = country
-        self.country = country_code
+        self.country_code: str = country
+        self.country: str = country_code
 
-        self.ip = kwargs.get("ip", "127.0.0.1")
-        self.longitude = lon
-        self.latitude = lat
-        self.timezone = kwargs.get("time_offset", 0) + 24
-        self.client_version = kwargs.get("version", 0.0)
-        self.in_lobby = False
+        self.ip: str = kwargs.get("ip", "127.0.0.1")
+        self.longitude: float = lon
+        self.latitude: float = lat
+        self.timezone: int = kwargs.get("time_offset", 0) + 24
+        self.client_version: float = kwargs.get("version", 0.0)
+        self.in_lobby: bool = False
 
         if kwargs.get("token"):
-            self.token = kwargs.get("token")
+            self.token: str = kwargs.get("token")
         else:
-            self.token = self.generate_token()
+            self.token: str = self.generate_token()
 
-        self.presence_filter = PresenceFilter.NIL
+        self.presence_filter: PresenceFilter = PresenceFilter.NIL
 
-        self.status = bStatus.IDLE
+        self.status: bStatus = bStatus.IDLE
         self.status_text: str = ""
         self.beatmap_md5: str = ""
         self.current_mods: Mods = Mods.NONE
-        self.play_mode: int = Mode.OSU
+        self.play_mode: Mode = Mode.OSU
         self.beatmap_id: int = -1
 
         self.friends: set[int] = set()
@@ -75,21 +80,22 @@ class Player:
 
         self.relax: int = 0  # 0 for vn / 1 for rx
 
-        self.block_unknown_pms = kwargs.get("block_nonfriend", 0)
+        self.block_unknown_pms: bool = kwargs.get("block_nonfriend", False)
 
-        self.queue = bytearray()
+        self.queue: bytes = bytearray()
 
-        self.login_time = time.time()
-        self.last_update = 0
+        self.login_time: float = time.time()
+        self.last_update: float = 0.0
 
-        self.bot = False
+        self.bot: "Player" = False
 
-        self.is_restricted = not (self.privileges & Privileges.VERIFIED) and (
+        self.is_restricted: bool = not (self.privileges & Privileges.VERIFIED) and (
             not self.privileges & Privileges.PENDING
         )
-        self.is_staff = self.privileges & Privileges.BAT
+        self.is_staff: bool = self.privileges & Privileges.BAT
 
-        self.last_np = None
+        self.last_np: "Beatmap" = None
+        self.last_score: 'Score' = None
 
     @property
     def embed(self) -> str:
@@ -186,10 +192,13 @@ class Player:
         if m.host == self.id:
             slot.host = True
 
-        self.match.connected.append(self)
+        if not self.match.chat:
+            mc = Channel(**{"raw": f"#multi_{self.match.match_id}", "name": "#multiplayer", "description": self.match.match_name})
+            self.match.chat = mc
 
-        if (lobbychan := glob.channels.get_channel("#lobby")) in self.channels:
-            await self.leave_channel(lobbychan)
+        await self.join_channel(self.match.chat)
+
+        self.match.connected.append(self)
 
         self.enqueue(await writer.MatchJoin(self.match))  # join success
 
@@ -202,6 +211,8 @@ class Player:
             not (slot := self.match.find_user(self))
         ):
             return
+
+        await self.leave_channel(self.match.chat)
 
         m = copy(self.match)
         self.match = None
@@ -235,8 +246,8 @@ class Player:
     async def join_channel(self, chan: Channel):
         if (
             chan in self.channels
-            or chan.staff  # if the chan is already in the user lists chans
-            and not self.is_staff  # if the user isnt staff and the chan is.
+            or (chan.staff  # if the chan is already in the user lists chans
+            and not self.is_staff)  # if the user isnt staff and the chan is.
         ):
             return
 

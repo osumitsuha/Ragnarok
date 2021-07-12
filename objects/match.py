@@ -52,7 +52,7 @@ class Match:
         self.map_title: str = ""
         self.map_md5: str = ""
 
-        self.slots: Players = [Players() for _ in range(0, 16)]
+        self.slots: list[Players] = [Players() for _ in range(0, 16)]
 
         self.mode: Mode = Mode.OSU
         self.mods: Mods = Mods.NONE
@@ -67,6 +67,7 @@ class Match:
         self.connected: list = []
 
         self.chat: Channel = None
+        self.locked: bool = False
 
     def __repr__(self) -> str:
         return f"MATCH-{self.match_id}"

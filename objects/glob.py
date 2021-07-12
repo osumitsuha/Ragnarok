@@ -55,7 +55,7 @@ channels: "Channels" = None
 
 matches: "Matches" = None
 
-osu_key: str = config["osu_api_key"]
+osu_key: str = config["api_conf"]["osu_api_key"]
 
 beatmaps: dict[str, "Beatmap"] = {}
 

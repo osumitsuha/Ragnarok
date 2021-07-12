@@ -40,5 +40,8 @@ class ScoringType(IntFlag):
     def find_value(cls, name: str) -> int:
         c = cls(0)
 
+        if name == "sv2":
+            return c.__class__.SCORE_V2
+
         if name.upper() in c.__class__.__dict__:
             return c.__class__.__dict__[name.upper()]

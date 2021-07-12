@@ -14,51 +14,42 @@ class Database:
         self.pool.close()
         await self.pool.wait_close()
 
-    async def execute(self, query: str, params: Optional[List[Any]] = None) -> int:
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(aiomysql.Cursor) as cur:
-                await cur.execute(query, params)
-                await conn.commit()
+    async def _fetch(self, query: str, params: Optional[list[Any]] = None, _dict: bool = False):
+        if _dict:
+            cursor = aiomysql.DictCursor
+        else:
+            cursor = aiomysql.Cursor
 
-                return cur.lastrowid
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(cursor) as cur:
+                await cur.execute(query, params)
+
+                return conn, cur
+
+    async def execute(self, query: str, params: Optional[List[Any]] = None) -> int:
+        conn, cur = await self._fetch(query, params)
+
+        await conn.commit()
+        return cur.lastrowid
 
     async def fetchall(
         self, query: str, params: Optional[List[Any]] = None, _dict: bool = False
     ) -> Dict[str, Any]:
-        if _dict:
-            cursor = aiomysql.DictCursor
-        else:
-            cursor = aiomysql.Cursor
+        _, cur = await self._fetch(query, params)
 
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(cursor) as cur:
-                await cur.execute(query, params)
-                return await cur.fetchall()
+        return await cur.fetchall()
 
     async def fetch(
         self, query: str, params: Optional[List[Any]] = None, _dict: bool = True
     ) -> Dict[str, Any]:
-        if _dict:
-            cursor = aiomysql.DictCursor
-        else:
-            cursor = aiomysql.Cursor
-
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(cursor) as cur:
-                await cur.execute(query, params)
-                return await cur.fetchone()
+        _, cur = await self._fetch(query, params, _dict)
+        
+        return await cur.fetchone()
 
     async def iterall(
         self, query: str, params: Optional[List[Any]] = None, _dict: bool = True
     ) -> Dict[str, Any]:
-        if _dict:
-            cursor = aiomysql.DictCursor
-        else:
-            cursor = aiomysql.Cursor
-
-        async with self.pool.acquire() as conn:
-            async with conn.cursor(cursor) as cur:
-                await cur.execute(query, params)
-
-                async for row in cur:
-                    yield row
+        _, cur = await self._fetch(query, params, _dict)
+        
+        async for row in cur:
+            yield row

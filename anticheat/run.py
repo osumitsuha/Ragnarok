@@ -2,9 +2,13 @@ from anticheat.utils.beatmap import Beatmap
 from osrparse import parse_replay
 from constants.mods import Mods
 from utils.replay import write_replay
+from constants.playmode import Mode
 
 
 async def run_anticheat(score, score_file_name: int, beatmap_file_name: str):
+    if score.mode != Mode.STD:
+        return
+
     r = parse_replay(await write_replay(s=score, file_name=score_file_name))
 
     hitobjects = await Beatmap().parse_hitobjects(
