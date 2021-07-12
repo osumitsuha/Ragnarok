@@ -1,4 +1,3 @@
-from re import search
 from constants.player import PresenceFilter, bStatus, Privileges, country_codes
 from constants.match import SlotStatus
 from objects.channel import Channel
