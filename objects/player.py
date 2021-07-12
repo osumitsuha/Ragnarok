@@ -1,3 +1,4 @@
+from re import search
 from constants.player import PresenceFilter, bStatus, Privileges, country_codes
 from constants.match import SlotStatus
 from objects.channel import Channel
@@ -95,7 +96,7 @@ class Player:
         self.is_staff: bool = self.privileges & Privileges.BAT
 
         self.last_np: "Beatmap" = None
-        self.last_score: 'Score' = None
+        self.last_score: "Score" = None
 
     @property
     def embed(self) -> str:

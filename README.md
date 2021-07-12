@@ -43,8 +43,5 @@ If there's any issues during setup, feel free to post an issue.
 ## Requirements
 Experience developing in Python.
 
-## Progress
-To see the progress we're making (What we've done, working on, improving, etc.) check out thet projects tab.
-
 ## License
 Ragnarok's code is licensed under the [MIT licence](https://opensource.org/licenses/MIT). Please see [the licence file](https://github.com/osumitsuha/Ragnarok/blob/main/LICENSE) for more information.

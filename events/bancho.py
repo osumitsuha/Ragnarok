@@ -289,6 +289,10 @@ async def send_public_message(p: Player, sr: Reader) -> None:
         )
         return
 
+    if np := glob.regex["np"].search(msg):
+        log.info(np.groups())
+        p.last_np = await Beatmap._get_beatmap_from_sql(None, np.groups(0))
+
     await chan.send(msg, p)
 
     if msg[0] == glob.prefix:
