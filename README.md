@@ -1,14 +1,14 @@
 # Ragnarok - an osu! private server
 Ragnarok is both a bancho and /web/ server, written in python3.9!
 
-Ragnarok will provide more stablibilty:tm: and way faster performance than ripple's bancho emulator (Second login averages about 4-5ms).
+Ragnarok will provide more stablibilty:tm: and way faster performance than Ripple's bancho emulator (Second login takes about 4-5ms).
 
 Note: Ragnarok does not work on windows.
 
 ## Setup
 We will not help setting up the whole server (nginx, mysql and those stuff), but just the bancho.
 
-We suggest making an envirement before doing anything. You can create one by installing pipenv.
+We suggest making an environment before doing anything. You can create one by installing pipenv.
 ```
 $ python3.9 -m pip install pipenv
 ...
@@ -42,9 +42,6 @@ If there's any issues during setup, feel free to post an issue.
 
 ## Requirements
 Experience developing in Python.
-
-## Progress
-To see the progress we're making (What we've done, working on, improving, etc.) check out thet projects tab.
 
 ## License
 Ragnarok's code is licensed under the [MIT licence](https://opensource.org/licenses/MIT). Please see [the licence file](https://github.com/osumitsuha/Ragnarok/blob/main/LICENSE) for more information.
