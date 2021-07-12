@@ -95,7 +95,7 @@ class Player:
         self.is_staff: bool = self.privileges & Privileges.BAT
 
         self.last_np: "Beatmap" = None
-        self.last_score: 'Score' = None
+        self.last_score: "Score" = None
 
     @property
     def embed(self) -> str:

@@ -337,7 +337,7 @@ async def score_submission(req: Request) -> bytes:
                 weighted += 416.6667 * (1 - 0.9994 ** len(scores))
                 stats.pp = math.ceil(weighted)
 
-                asyncio.create_task(s.player.update_stats(s.mode, s.relax))
+                await stats.update_stats(s.mode, s.relax)
 
                 if s.position == 1 and not stats.is_restricted:
                     modes = {
@@ -355,7 +355,6 @@ async def score_submission(req: Request) -> bytes:
                     )
 
         if not s.relax:
-
             ret: list = []
 
             ret.append(

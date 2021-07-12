@@ -61,6 +61,6 @@ beatmaps: dict[str, "Beatmap"] = {}
 
 regex: dict[str, Pattern[str]] = {
     "np": re.compile(
-        r"^ACTION|https://osu.mitsuha.pw/beatmapsets/[0-9].*#/(\d*)"
-    )  # taken from kurrikku cause i cant regex lol
+        rf"\x01ACTION is (?:listening|editing|playing|watching) to \[https://osu.{domain}/beatmapsets/[0-9].*#/(\d*)"
+    )
 }
