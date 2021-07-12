@@ -1,103 +1,71 @@
-from objects.player import Player
+from typing import TYPE_CHECKING
 from packets import writer
-import time
 from objects import glob
+from typing import Any
 from utils import log
 
+if TYPE_CHECKING:
+    from objects.player import Player
+
+
 class Channel:
-    def __init__(self, name, description, public=True,
-                 staff=False, raw_name = None, 
-                 auto_join=False, read_only=False):
-        self.name: str = name
-        self.raw_name: str = raw_name if raw_name \
-                                else name
+    def __init__(self, **kwargs):
+        self.name: str = kwargs.get("name", "unnamed")  # display name
+        self._name: str = kwargs.get("raw", self.name)  # real name. fx #multi_1
 
-        self.description: str = description
-        self.players_len: int = 0
-        self.public: bool = public
-        self.read_only: bool = read_only
-        self.auto_join: bool = auto_join
-        self.staff: bool = staff
+        self.description: str = kwargs.get("description", "An osu! channel.")
 
-class Channels:
-    def __init__(self):
-        self.channels: list[Channel] = []
+        self.public: bool = kwargs.get("public", True)
+        self.read_only: bool = kwargs.get("read_only", False)
+        self.auto_join: bool = kwargs.get("auto_join", False)
 
-    async def add_channel(self, name, description, public, staff, auto_join, read_only, raw_name=None):
-        c = Channel(name, description, public, staff, raw_name, auto_join, read_only)
-        
-        self.channels.append(c)
+        self.staff: bool = kwargs.get("staff", False)
 
-    def get_channel(self, name):
-        for channel in self.channels:
-            if channel.raw_name == name:
-                return channel
+        self.connected: list[Player] = []
 
-    async def join_channel(self, p: Player, name):
-        if not (chan := self.get_channel(name)):
-            return # channel not found; ignore.
+    @property
+    def is_multi(self):
+        return self.name == "#multiplayer"
 
-        if not p.is_staff and chan.staff:
-            return # ignore if user isn't staff on staff chat
+    def enqueue(self, data: bytes, ignore: list[int] = []) -> None:
+        for p in self.connected:
+            if p.id not in ignore:
+                p.enqueue(data)
 
-        p.enqueue(await writer.ChanJoinSuccess(name))
+    async def update_info(self) -> None:
+        glob.players.enqueue(await writer.ChanInfo(self._name))
 
-        p.channels.append(chan)
-        chan.players_len += 1
+    async def force_join(self, p: "Player") -> None:
+        if self in p.channels:
+            return
 
-        glob.players.enqueue(await writer.ChanInfo(name))
+        p.channels.append(self)
+        self.connected.append(p)
 
+        p.enqueue(await writer.ChanJoinSuccess(self._name))
 
-    async def leave_channel(self, p: Player, name, kicked = False):
-        if not (chan := self.get_channel(name)):
-            return # channel not found; ignore.
+        await self.update_info()
 
-        p.channels.remove(chan)
-        chan.players_len -= 1
+    async def kick(self, p: "Player") -> None:
+        if not self in p.channels:
+            return
 
-        if kicked:
-            p.enqueue(await writer.ChanKick(name))
-        
-        glob.players.enqueue(await writer.ChanInfo(name))
+        p.channels.remove(self)
+        self.connected.remove(p)
 
-    async def message(self, p, msg, channel):
-        if p.is_restricted:
-            return # ignore if the user is restricted
-        
-        if not channel.startswith("#"):
-            u = await glob.players.get_user(channel) # channel is the users username in this instance
+        p.enqueue(await writer.ChanKick(self._name))
 
-            if not u:
-                p.enqueue(await writer.SendMessage(glob.bot.username, "The player you're trying to contact, is currently offline.", channel))
-                return # user isn't online; prevents the server from crashing
+        await self.update_info()
 
-            u.enqueue(await writer.SendMessage(p.username, msg, channel))
+    async def send(self, message: str, sender: "Player") -> None:
+        if not sender.bot:
+            if not (self in sender.channels or self.read_only):
+                return
 
-        if not (chan := self.get_channel(channel)):
-            return # channel not found; ignore.
+        ret = await writer.SendMessage(
+            sender=sender.username, message=message, channel=self.name, id=sender.id
+        )
 
-        if chan.read_only and not p.bot:
-            return # ignore message in read only chats, 
-                   # that doesn't come from bots
+        self.enqueue(ret, ignore=[sender.id])
 
-        # TODO: checks.
-        for u in glob.players.players:
-            if p.id != u.id:
-                u.enqueue(await writer.SendMessage(p.username, msg, channel))
-
-        log.info(f"<{p.username}> {msg} [{channel}]")
-
-        if msg.startswith(glob.prefix):
-            parsed = msg.split(" ")[0][1:]
-            
-            for cmd in glob.registered_commands:
-                if parsed == cmd["cmd"]:
-                    if p.id == 1:
-                        return # ignore bot
-                        
-                    if not p.privileges & cmd["required_perms"]:
-                        return # don't say anything if no perms
-
-                    resp = await cmd["trigger"](p, channel, msg)
-
-                    glob.players.enqueue(await writer.SendMessage(glob.bot.username, resp, channel))
+        log.chat(f"<{sender.username}> {message} [{self._name}]")

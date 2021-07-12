@@ -1,5 +1,6 @@
 from enum import unique, IntEnum
 
+
 @unique
 class Mode(IntEnum):
     OSU = 0

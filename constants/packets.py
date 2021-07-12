@@ -1,5 +1,6 @@
 from enum import unique, IntEnum
 
+
 @unique
 class BanchoPackets(IntEnum):
     OSU_CHANGE_ACTION = 0
@@ -8,11 +9,11 @@ class BanchoPackets(IntEnum):
     OSU_REQUEST_STATUS_UPDATE = 3
     OSU_PING = 4
     CHO_USER_ID = 5
-    CHO_CMD_ERR = 6 # Unused
+    CHO_CMD_ERR = 6  # Unused
     CHO_SEND_MESSAGE = 7
     CHO_PONG = 8
     CHO_HANDLE_IRC_CHANGE_USERNAME = 9
-    CHO_HANDLE_IRC_QUIT = 10 # Unused
+    CHO_HANDLE_IRC_QUIT = 10  # Unused
     CHO_USER_STATS = 11
     CHO_USER_LOGOUT = 12
     CHO_SPECTATOR_JOINED = 13
@@ -22,7 +23,7 @@ class BanchoPackets(IntEnum):
     OSU_STOP_SPECTATING = 17
     OSU_SPECTATE_FRAMES = 18
     CHO_VERSION_UPDATE = 19
-    OSU_ERROR_REPORT = 20 # Unused
+    OSU_ERROR_REPORT = 20  # Unused
     OSU_CANT_SPECTATE = 21
     CHO_SPECTATOR_CANT_SPECTATE = 22
     CHO_GET_ATTENTION = 23
@@ -63,7 +64,7 @@ class BanchoPackets(IntEnum):
     OSU_MATCH_HAS_BEATMAP = 59
     OSU_MATCH_SKIP_REQUEST = 60
     CHO_MATCH_SKIP = 61
-    CHO_UNAUTHORIZED = 62 # Unused
+    CHO_UNAUTHORIZED = 62  # Unused
     OSU_CHANNEL_JOIN = 63
     CHO_CHANNEL_JOIN_SUCCESS = 64
     CHO_CHANNEL_INFO = 65
@@ -81,7 +82,7 @@ class BanchoPackets(IntEnum):
     OSU_MATCH_CHANGE_TEAM = 77
     OSU_CHANNEL_PART = 78
     OSU_RECEIVE_UPDATES = 79
-    CHO_MONITOR = 80 # unused
+    CHO_MONITOR = 80  # unused
     CHO_MATCH_PLAYER_SKIPPED = 81
     OSU_SET_AWAY_MESSAGE = 82
     CHO_USER_PRESENCE = 83
@@ -106,7 +107,7 @@ class BanchoPackets(IntEnum):
     CHO_VERSION_UPDATE_FORCED = 102
     CHO_SWITCH_SERVER = 103
     CHO_ACCOUNT_RESTRICTED = 104
-    CHO_RTX = 105
+    CHO_RTX = 105 # depricated
     CHO_MATCH_ABORT = 106
     CHO_SWITCH_TOURNAMENT_SERVER = 107
     OSU_TOURNAMENT_JOIN_MATCH_CHANNEL = 108
