@@ -1,4 +1,5 @@
 # Ragnarok - an osu! private server
+## NOTE: Aoba and I, have been working on rewriting Ragnarok to Vlang, so this won't be updated until we're up to date with Ragnarok in v
 Ragnarok is both a bancho and /web/ server, written in python3.9!
 
 Ragnarok will provide more stablibilty:tm: and way faster performance than Ripple's bancho emulator (Second login takes about 4-5ms).
